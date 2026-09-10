@@ -1,0 +1,4 @@
+interface:
+  display_name: "COOS QA Test Cases"
+  short_description: "Create reusable, risk-focused COOS QA suites"
+  default_prompt: "Use $coos-qa-test-cases to create a QA-ready COOS test suite from these requirements."

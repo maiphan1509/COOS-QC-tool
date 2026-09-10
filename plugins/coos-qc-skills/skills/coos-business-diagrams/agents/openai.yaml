@@ -1,0 +1,4 @@
+interface:
+  display_name: "COOS Business Diagrams"
+  short_description: "Create stakeholder-friendly COOS process diagrams"
+  default_prompt: "Use $coos-business-diagrams to turn these COOS requirements into a clear business-facing Mermaid diagram."

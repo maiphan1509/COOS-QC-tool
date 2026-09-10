@@ -1,0 +1,4 @@
+interface:
+  display_name: "COOS Product Docs"
+  short_description: "Draft implementation-ready COOS specifications"
+  default_prompt: "Use $coos-product-docs to create implementation-ready product documentation from these COOS source materials."

@@ -1,0 +1,31 @@
+{
+  "name": "coos-qc-tool",
+  "owner": {
+    "name": "maiphan1509"
+  },
+  "metadata": {
+    "description": "COOS and COAD product documentation, QA test case, and business diagram skills.",
+    "version": "1.0.0"
+  },
+  "plugins": [
+    {
+      "name": "coos-qc-skills",
+      "source": "./plugins/coos-qc-skills",
+      "description": "Product docs, QA test cases, and business diagrams for the COOS and COAD platforms.",
+      "version": "1.0.0",
+      "author": {
+        "name": "maiphan1509"
+      },
+      "homepage": "https://github.com/maiphan1509/COOS-QC-tool",
+      "keywords": [
+        "coos",
+        "coad",
+        "qa",
+        "test-cases",
+        "product-docs",
+        "business-analysis",
+        "mermaid"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,4 @@
+interface:
+  display_name: "COAD QA Test Cases"
+  short_description: "Create risk-focused COAD QA test suites"
+  default_prompt: "Use $coad-qa-test-cases to create QA-ready test cases from these COAD requirements, including realistic high-risk edge cases."

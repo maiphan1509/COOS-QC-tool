@@ -1,0 +1,19 @@
+{
+  "name": "coos-qc-skills",
+  "description": "Product documentation, QA test case, and business diagram skills for the COOS and COAD platforms. Adds coos-product-docs, coos-qa-test-cases, coos-business-diagrams, coad-product-docs, and coad-qa-test-cases.",
+  "version": "1.0.0",
+  "author": {
+    "name": "maiphan1509"
+  },
+  "homepage": "https://github.com/maiphan1509/COOS-QC-tool",
+  "license": "UNLICENSED",
+  "keywords": [
+    "coos",
+    "coad",
+    "qa",
+    "test-cases",
+    "product-docs",
+    "business-analysis",
+    "mermaid"
+  ]
+}

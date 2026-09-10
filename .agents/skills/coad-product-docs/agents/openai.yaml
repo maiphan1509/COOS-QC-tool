@@ -1,0 +1,4 @@
+interface:
+  display_name: "COAD Product Docs"
+  short_description: "Draft implementation-ready COAD specs"
+  default_prompt: "Use $coad-product-docs to create implementation-ready product documentation from this COAD reference material."
