@@ -40,9 +40,10 @@ If the product is ambiguous, ask which one before starting.
 
 - **Codex** — skills resolve from `.codex/skills/`. Reference one as `$coos-qa-test-cases`.
 - **Claude Code** — skills resolve from `.claude/skills/`. Use the `Skill` tool, or install the plugin (see [README.md](README.md)).
+- **Claude Code plugin** — also exposes slash commands that load the matching skill and pass the argument through: `/coos-docs`, `/coos-qa`, `/coos-diagram`, `/coad-docs`, `/coad-qa` (namespaced form: `/coos-qc-skills:coos-qa`). Sources live in `plugins/coos-qc-skills/commands/`.
 - **Other agents** — read `.agents/skills/<name>/SKILL.md` directly and follow it as a system instruction.
 
-All three trees hold identical content. See "Skill sources" below.
+All three skill trees hold identical content. See "Skill sources" below.
 
 ## Skill sources
 
@@ -54,13 +55,15 @@ Never edit a mirror. Edit `.codex/skills/`, then run:
 ./scripts/sync-skills.sh
 ```
 
-Verify mirrors are current without writing (used by CI):
+The script lints every skill first (front matter present, `name` equals the directory name, `description` non-empty and under 1024 characters, `agents/openai.yaml` present) and refuses to mirror on any failure.
+
+Verify without writing — this is what CI runs on every push and pull request:
 
 ```bash
 ./scripts/sync-skills.sh --check
 ```
 
-If you change a skill and skip the sync, Claude Code and plugin users silently get the old version.
+If you change a skill and skip the sync, Claude Code and plugin users silently get the old version. CI (`.github/workflows/check.yml`) fails the pull request in that case.
 
 ## Adding a skill
 
@@ -69,8 +72,19 @@ If you change a skill and skip the sync, Claude Code and plugin users silently g
    - `description` must state both what the skill does and when to use it — it is the only text an agent sees when deciding whether to load the skill.
 2. Put supporting rules in `references/`, templates in `assets/`.
 3. Add `agents/openai.yaml` with `interface.display_name`, `interface.short_description`, `interface.default_prompt`.
-4. Run `./scripts/sync-skills.sh`.
-5. Add a row to the Skill inventory table above.
+4. Run `./scripts/sync-skills.sh`; fix anything the lint reports.
+5. Add a row to the Skill inventory table above and an entry under `## [Unreleased]` in `CHANGELOG.md`.
+6. Optional: add a slash command in `plugins/coos-qc-skills/commands/<short-name>.md` following the existing files (front matter with `description` and `argument-hint`, body loads the skill and passes `$ARGUMENTS`).
+
+## Releasing
+
+Plugin users only receive changes when the version rises. Bump every manifest and promote the changelog in one step:
+
+```bash
+./scripts/bump-version.sh 1.1.0
+```
+
+Add `--tag` to also commit and create `v1.1.0`, then `git push --follow-tags`. Never edit the `version` fields by hand; they must agree across `plugin.json` and `marketplace.json`, and CI checks that they do.
 
 ## Output conventions
 

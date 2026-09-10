@@ -1,0 +1,45 @@
+name: check
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Shell syntax
+        run: |
+          for f in install.sh scripts/*.sh; do bash -n "$f"; done
+
+      - name: ShellCheck
+        run: shellcheck -S warning install.sh scripts/*.sh
+
+      - name: Skill lint and mirror freshness
+        run: ./scripts/sync-skills.sh --check
+
+      - name: Manifests parse and versions agree
+        run: |
+          python3 - <<'PY'
+          import json, sys
+          plugin = json.load(open("plugins/coos-qc-skills/.claude-plugin/plugin.json"))
+          market = json.load(open(".claude-plugin/marketplace.json"))
+          entry = next(p for p in market["plugins"] if p["name"] == plugin["name"])
+          versions = {plugin["version"], entry["version"], market["metadata"]["version"]}
+          if len(versions) != 1:
+              sys.exit(f"version mismatch across manifests: {sorted(versions)}")
+          print("manifests OK, version", plugin["version"])
+          PY
+
+      - name: Slash commands have front matter
+        run: |
+          status=0
+          for f in plugins/coos-qc-skills/commands/*.md; do
+            if [ "$(head -n 1 "$f")" != "---" ] || ! grep -q '^description:' "$f"; then
+              echo "bad front matter: $f" >&2; status=1
+            fi
+          done
+          exit $status
