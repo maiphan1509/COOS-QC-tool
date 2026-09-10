@@ -7,6 +7,11 @@ Bump with `./scripts/bump-version.sh <version>`; it promotes the Unreleased sect
 
 ## [Unreleased]
 
+### Added
+
+- `platforms/` COOS platform reference captured from staging on 2026-09-10: shared foundations, glossary, status catalog, configuration values, and known defects (`platforms/AGENTS.md`); per-portal features and complete route tables for Buyer (67 routes), Seller (67), and Admin (122); four Mermaid workflow diagrams with a node-to-route mapping (`platforms/workflows/`).
+- `AGENTS.md` section pointing agents to `platforms/` and stating the rules for using and maintaining it.
+
 ## [1.0.0] - 2026-09-10
 
 ### Added

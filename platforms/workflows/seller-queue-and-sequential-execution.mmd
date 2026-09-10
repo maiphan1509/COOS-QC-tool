@@ -1,0 +1,175 @@
+---
+config:
+  theme: redux
+  layout: elk
+---
+flowchart TB
+    subgraph queue_legend["Legend"]
+        direction LR
+        queue_legend_terminal(("Start / end")):::terminal
+        queue_legend_seller("Seller action"):::sellerAction
+        queue_legend_system("System action"):::systemAction
+        queue_legend_decision{"Decision"}:::decision
+        queue_legend_order(["Order status"]):::orderStatus
+        queue_legend_task(["Task status"]):::taskStatus
+        queue_legend_queue(["Queue status"]):::queueStatus
+        queue_legend_note["Policy / timing note"]:::note
+    end
+
+    subgraph queue_activation["Paid Order activation"]
+        direction TB
+        queue_start(("Start: Valid payment is confirmed")):::terminal
+        queue_order_ready(["Order status: READY"]):::orderStatus
+        queue_reserved(["Queue status: RESERVED"]):::queueStatus
+        queue_system_provisions("System: Provision exactly one Task<br/>for each purchased quantity unit"):::systemAction
+        queue_tasks_new(["All Task statuses: NEW"]):::taskStatus
+        queue_system_attaches_snapshots("System: Attach brief, sequence, duration,<br/>schedule, and financial allocation to each Task"):::systemAction
+        queue_orchestration_success{"Did every orchestration step<br/>complete successfully?"}:::decision
+        queue_system_retries("System: Retry orchestration idempotently"):::systemAction
+        queue_order_ready_retry(["Order status: READY"]):::orderStatus
+        queue_reserved_retry(["Queue status: RESERVED"]):::queueStatus
+        queue_system_activates("System: Activate the Order<br/>and establish its FIFO queue time"):::systemAction
+        queue_order_active(["Order status: ACTIVE"]):::orderStatus
+        queue_has_running{"Does this Seller already have<br/>a RUNNING Order?"}:::decision
+        queue_waiting(["Queue status: WAITING"]):::queueStatus
+        queue_running(["Queue status: RUNNING"]):::queueStatus
+    end
+
+    subgraph queue_execution["Sequential Task execution"]
+        direction TB
+        queue_work_time{"Has the next valid Seller<br/>working interval been reached?"}:::decision
+        queue_system_waits_for_schedule("System: Keep the current Task scheduled"):::systemAction
+        queue_task_waiting_new(["Current Task status: NEW"]):::taskStatus
+        queue_system_starts_task("System: Start the current Task<br/>and calculate its working-hour deadline"):::systemAction
+        queue_task_in_progress(["Current Task status: IN_PROGRESS"]):::taskStatus
+        queue_delivery_event{"Does Seller confirm a valid official delivery<br/>at or before the Task deadline?"}:::decision
+        queue_seller_delivers("Seller: Confirm official delivery<br/>at or before the Task deadline"):::sellerAction
+        queue_task_delivered(["Current Task status: DELIVERED"]):::taskStatus
+        queue_running_during_review(["Queue status: RUNNING"]):::queueStatus
+        queue_review_outcome{"What is the current Task outcome<br/>after Buyer review?"}:::decision
+        queue_system_resumes_revision("System: Resume the Task for<br/>an accepted revision"):::systemAction
+        queue_task_revision_in_progress(["Current Task status: IN_PROGRESS"]):::taskStatus
+        queue_task_completed(["Current Task status: COMPLETED"]):::taskStatus
+        queue_more_tasks{"Are there unfinished Tasks<br/>in the Order?"}:::decision
+        queue_system_schedules_next("System: Schedule the next Task<br/>in sequence"):::systemAction
+        queue_next_task_new(["Next Task status: NEW"]):::taskStatus
+        queue_order_completed(["Order status: COMPLETED"]):::orderStatus
+        queue_released_completed(["Queue status: RELEASED"]):::queueStatus
+    end
+
+    subgraph queue_dispute["Dispute blocks execution"]
+        direction TB
+        queue_task_disputed(["Current Task status: DISPUTED"]):::taskStatus
+        queue_system_holds_later("System: Hold every later unstarted Task"):::systemAction
+        queue_later_on_hold(["Later Task statuses: ON_HOLD"]):::taskStatus
+        queue_order_active_disputed(["Order status: ACTIVE"]):::orderStatus
+        queue_system_marks_dispute("System: Mark the Order as having<br/>an open Dispute"):::systemAction
+        queue_blocked(["Queue status: BLOCKED"]):::queueStatus
+    end
+
+    subgraph queue_cancellation["Seller non-delivery cancels remaining work"]
+        direction TB
+        queue_system_cancels_current("System: Cancel the overdue current Task"):::systemAction
+        queue_current_canceled(["Current Task status: CANCELED"]):::taskStatus
+        queue_system_cancels_later("System: Cancel all later<br/>NEW or ON_HOLD Tasks"):::systemAction
+        queue_later_canceled(["Later Task statuses: CANCELED"]):::taskStatus
+        queue_order_canceled(["Order status: CANCELED"]):::orderStatus
+        queue_released_canceled(["Queue status: RELEASED"]):::queueStatus
+        queue_system_marks_finance("System: Mark canceled Task amounts<br/>for future financial resolution"):::systemAction
+    end
+
+    subgraph queue_promotion["Atomic FIFO promotion"]
+        direction TB
+        queue_promotion_trigger(("Trigger: RUNNING entry becomes<br/>RELEASED or BLOCKED")):::terminal
+        queue_has_waiting{"Is there an eligible<br/>WAITING Order?"}:::decision
+        queue_system_selects_oldest("System: Select the oldest eligible Order<br/>by queue time, then Order ID"):::systemAction
+        queue_system_promotes("System: Promote the selected Order"):::systemAction
+        queue_promoted_running(["Queue status: RUNNING"]):::queueStatus
+        queue_no_waiting(("End: Seller has no RUNNING Order")):::terminal
+    end
+
+    queue_single_running_note["Policy: A Seller has at most one RUNNING entry;<br/>WAITING Orders never have an IN_PROGRESS Task"]:::note
+    queue_review_note["Policy: Buyer review keeps the Order RUNNING;<br/>another Order cannot use the Seller execution slot"]:::note
+    queue_fifo_note["Policy: RESERVED has no FIFO position;<br/>FIFO begins only when the paid Order becomes ACTIVE"]:::note
+    queue_blocked_note["Policy: BLOCKED releases the execution slot<br/>but still counts toward the admission threshold"]:::note
+    queue_projection_note["Forecast: Include remaining execution, Buyer review windows,<br/>unfinished Tasks ahead, and accepted revisions"]:::note
+    queue_atomic_note["Reliability: Release or block and promotion form one atomic outcome<br/>or recover idempotently without two RUNNING Orders"]:::note
+
+    queue_start --> queue_order_ready
+    queue_order_ready --> queue_reserved
+    queue_reserved --> queue_system_provisions
+    queue_system_provisions --> queue_tasks_new
+    queue_tasks_new --> queue_system_attaches_snapshots
+    queue_system_attaches_snapshots --> queue_orchestration_success
+    queue_orchestration_success -- "No" --> queue_order_ready_retry
+    queue_order_ready_retry --> queue_reserved_retry
+    queue_reserved_retry --> queue_system_retries
+    queue_system_retries --> queue_system_provisions
+    queue_orchestration_success -- "Yes" --> queue_system_activates
+    queue_system_activates --> queue_order_active
+    queue_order_active --> queue_has_running
+    queue_has_running -- "Yes" --> queue_waiting
+    queue_has_running -- "No" --> queue_running
+
+    queue_running --> queue_work_time
+    queue_promoted_running --> queue_work_time
+    queue_work_time -- "No" --> queue_system_waits_for_schedule
+    queue_system_waits_for_schedule --> queue_task_waiting_new
+    queue_task_waiting_new --> queue_work_time
+    queue_work_time -- "Yes" --> queue_system_starts_task
+    queue_system_starts_task --> queue_task_in_progress
+    queue_task_in_progress --> queue_delivery_event
+    queue_delivery_event -- "Yes" --> queue_seller_delivers
+    queue_seller_delivers --> queue_task_delivered
+    queue_task_delivered --> queue_running_during_review
+    queue_running_during_review --> queue_review_outcome
+    queue_review_outcome -- "Artifact approved" --> queue_task_completed
+    queue_review_outcome -- "Revision accepted" --> queue_system_resumes_revision
+    queue_system_resumes_revision --> queue_task_revision_in_progress
+    queue_task_revision_in_progress --> queue_delivery_event
+    queue_task_completed --> queue_more_tasks
+    queue_more_tasks -- "Yes" --> queue_system_schedules_next
+    queue_system_schedules_next --> queue_next_task_new
+    queue_next_task_new --> queue_work_time
+    queue_more_tasks -- "No" --> queue_order_completed
+    queue_order_completed --> queue_released_completed
+    queue_released_completed --> queue_promotion_trigger
+
+    queue_review_outcome -- "Dispute opened" --> queue_task_disputed
+    queue_task_disputed --> queue_system_holds_later
+    queue_system_holds_later --> queue_later_on_hold
+    queue_later_on_hold --> queue_order_active_disputed
+    queue_order_active_disputed --> queue_system_marks_dispute
+    queue_system_marks_dispute --> queue_blocked
+    queue_blocked --> queue_promotion_trigger
+
+    queue_delivery_event -- "No, deadline missed" --> queue_system_cancels_current
+    queue_system_cancels_current --> queue_current_canceled
+    queue_current_canceled --> queue_system_cancels_later
+    queue_system_cancels_later --> queue_later_canceled
+    queue_later_canceled --> queue_order_canceled
+    queue_order_canceled --> queue_released_canceled
+    queue_released_canceled --> queue_system_marks_finance
+    queue_system_marks_finance --> queue_promotion_trigger
+
+    queue_promotion_trigger --> queue_has_waiting
+    queue_has_waiting -- "Yes" --> queue_system_selects_oldest
+    queue_system_selects_oldest --> queue_system_promotes
+    queue_system_promotes --> queue_promoted_running
+    queue_has_waiting -- "No" --> queue_no_waiting
+
+    queue_single_running_note -. "Applies throughout" .-> queue_running
+    queue_review_note -. "Explains" .-> queue_running_during_review
+    queue_fifo_note -. "Explains" .-> queue_system_activates
+    queue_blocked_note -. "Explains" .-> queue_blocked
+    queue_projection_note -. "Applies to WAITING forecasts" .-> queue_waiting
+    queue_atomic_note -. "Applies to" .-> queue_promotion_trigger
+
+    classDef terminal fill:#1E3A5F,color:#FFFFFF,stroke:#102A43,stroke-width:2px
+    classDef sellerAction fill:#EDE3F7,color:#2D1B45,stroke:#7B1FA2,stroke-width:2px
+    classDef systemAction fill:#DDF3E4,color:#123524,stroke:#2E7D32,stroke-width:2px
+    classDef decision fill:#FFFFFF,color:#111827,stroke:#374151,stroke-width:2px
+    classDef orderStatus fill:#FFE0B2,color:#4A2A00,stroke:#EF6C00,stroke-width:2px
+    classDef taskStatus fill:#FFF3CD,color:#3D2F00,stroke:#B7791F,stroke-width:2px
+    classDef queueStatus fill:#D7F2F8,color:#063B46,stroke:#00838F,stroke-width:2px
+    classDef note fill:#FFF8E1,color:#3E2F17,stroke:#8D6E63,stroke-width:1.5px,stroke-dasharray:5 3
