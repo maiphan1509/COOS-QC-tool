@@ -1,0 +1,174 @@
+---
+config:
+  theme: redux
+  layout: elk
+---
+flowchart TB
+ subgraph artifact_legend["Legend"]
+    direction LR
+        artifact_legend_terminal(("Start / end"))
+        artifact_legend_buyer("Buyer action")
+        artifact_legend_seller("Seller action")
+        artifact_legend_system("System action")
+        artifact_legend_decision{"Decision"}
+        artifact_legend_order(["Order status"])
+        artifact_legend_task(["Task status"])
+        artifact_legend_artifact(["Artifact status"])
+        artifact_legend_queue(["Queue status"])
+        artifact_legend_earning[("Seller Earning record")]
+        artifact_legend_note["Policy / timing note"]
+  end
+ subgraph artifact_submission["Official delivery"]
+    direction TB
+        artifact_start(("Start: Current Task is in progress"))
+        artifact_task_in_progress(["Current Task status: IN_PROGRESS"])
+        artifact_seller_uploads("Seller: Upload temporary files<br>or prepare delivery content")
+        artifact_seller_confirms("Seller: Confirm official delivery")
+        artifact_submission_valid{"Is the Task IN_PROGRESS, content valid,<br>and submission at or before its deadline?"}
+        artifact_submission_rejected(("End: Reject invalid or late submission;<br>non-delivery cancellation applies"))
+        artifact_system_creates("System: Create the next official Artifact<br>and attach the submitted content")
+        artifact_submitted(["Current Artifact status: SUBMITTED"])
+        artifact_task_delivered(["Current Task status: DELIVERED"])
+        artifact_system_sets_review("System: Set the Buyer review deadline")
+        artifact_all_delivered{"Are all Tasks now<br>DELIVERED or COMPLETED?"}
+        artifact_order_active(["Order status: ACTIVE"])
+        artifact_order_delivered(["Order status: DELIVERED"])
+        artifact_queue_running(["Queue status: RUNNING"])
+  end
+ subgraph artifact_review["Buyer review and approval"]
+    direction TB
+        artifact_review_outcome{"What happens before the<br>Buyer review deadline?"}
+        artifact_buyer_approves("Buyer: Approve the current Artifact")
+        artifact_system_auto_approves("System: Automatically approve<br>after the review timeout")
+        artifact_approved(["Current Artifact status: APPROVED"])
+        artifact_task_completed(["Current Task status: COMPLETED"])
+        artifact_system_records_earning("System: Record the Task completion earning<br>exactly once")
+        artifact_earning_record[("Seller Earning record for this Task")]
+        artifact_more_tasks{"Are there unfinished Tasks<br>in this Order?"}
+        artifact_system_schedules_next("System: Schedule the next Task<br>for a valid Seller working interval")
+        artifact_next_task(["Next Task status: NEW"])
+        artifact_next_end(("End: Continue sequential Task execution"))
+        artifact_order_completed(["Order status: COMPLETED"])
+        artifact_queue_released(["Queue status: RELEASED"])
+        artifact_completion_end(("End: Release Seller slot<br>and run FIFO promotion"))
+        artifact_revision_connector(("Continue: Revision Request lifecycle"))
+        artifact_dispute_connector(("Continue: Eligible Dispute lifecycle"))
+  end
+ subgraph artifact_revision_history["Revised delivery creates history"]
+    direction TB
+        artifact_revision_start(("Start: An accepted revision<br>returns the Task to work"))
+        artifact_revision_task_in_progress(["Task status: IN_PROGRESS"])
+        artifact_seller_resubmits("Seller: Confirm revised delivery<br>at or before its revision deadline")
+        artifact_system_creates_next("System: Create a new Artifact<br>with the next sequence number")
+        artifact_new_submitted(["New Artifact status: SUBMITTED"])
+        artifact_review_again(("End: Start a new Buyer review window"))
+  end
+    artifact_start --> artifact_task_in_progress
+    artifact_task_in_progress --> artifact_seller_uploads
+    artifact_seller_uploads --> artifact_seller_confirms
+    artifact_seller_confirms --> artifact_submission_valid
+    artifact_submission_valid -- No --> artifact_submission_rejected
+    artifact_submission_valid -- Yes --> artifact_system_creates
+    artifact_system_creates --> artifact_submitted
+    artifact_submitted --> artifact_task_delivered
+    artifact_task_delivered --> artifact_system_sets_review
+    artifact_system_sets_review --> artifact_all_delivered
+    artifact_all_delivered -- No --> artifact_order_active
+    artifact_all_delivered -- Yes --> artifact_order_delivered
+    artifact_order_active --> artifact_queue_running
+    artifact_order_delivered --> artifact_queue_running
+    artifact_queue_running --> artifact_review_outcome
+    artifact_review_outcome -- Buyer approves --> artifact_buyer_approves
+    artifact_buyer_approves --> artifact_approved
+    artifact_review_outcome -- No action before deadline --> artifact_system_auto_approves
+    artifact_system_auto_approves --> artifact_approved
+    artifact_review_outcome -- Buyer requests revision --> artifact_revision_connector
+    artifact_review_outcome -- Buyer opens eligible Dispute --> artifact_dispute_connector
+    artifact_approved --> artifact_task_completed
+    artifact_task_completed --> artifact_system_records_earning
+    artifact_system_records_earning --> artifact_earning_record
+    artifact_earning_record --> artifact_more_tasks
+    artifact_more_tasks -- Yes --> artifact_system_schedules_next
+    artifact_system_schedules_next --> artifact_next_task
+    artifact_next_task --> artifact_next_end
+    artifact_more_tasks -- No --> artifact_order_completed
+    artifact_order_completed --> artifact_queue_released
+    artifact_queue_released --> artifact_completion_end
+    artifact_revision_start --> artifact_revision_task_in_progress
+    artifact_revision_task_in_progress --> artifact_seller_resubmits
+    artifact_seller_resubmits --> artifact_system_creates_next
+    artifact_system_creates_next --> artifact_new_submitted
+    artifact_new_submitted --> artifact_review_again
+    artifact_temp_note["Policy: Temporary uploads are not Artifacts<br>and never count as official delivery"] -. Explains .-> artifact_seller_uploads
+    artifact_history_note["Policy: Official Artifacts are immutable delivery history;<br>a revision resubmission creates a new sequential Artifact"] -. Applies to .-> artifact_system_creates_next
+    artifact_current_note["Policy: A Task has at most one current actionable Artifact;<br>historical Artifacts remain visible"] -. Applies throughout .-> artifact_submitted
+    artifact_review_note["Timing: Buyer review defaults to 24 calendar hours;<br>a later setting change does not alter an existing deadline"] -. Applies to .-> artifact_system_sets_review
+    artifact_race_note["Reliability: A submission timestamped at or before the deadline<br>wins even if the overdue automation runs concurrently"] -. Applies to .-> artifact_submission_valid
+    artifact_earning_note["Policy: Earning is recorded per completed Task;<br>DISPUTED or CANCELED Tasks create no earning"] -. Applies to .-> artifact_system_records_earning
+    artifact_allocation_note["Finance: Each Task keeps its allocated amount;<br>deterministic rounding assigns any remainder to the last Task"] -. Applies to .-> artifact_earning_record
+
+     artifact_legend_terminal:::terminal
+     artifact_legend_buyer:::buyerAction
+     artifact_legend_seller:::sellerAction
+     artifact_legend_system:::systemAction
+     artifact_legend_decision:::decision
+     artifact_legend_order:::orderStatus
+     artifact_legend_task:::taskStatus
+     artifact_legend_artifact:::artifactStatus
+     artifact_legend_queue:::queueStatus
+     artifact_legend_earning:::earningObject
+     artifact_legend_note:::note
+     artifact_start:::terminal
+     artifact_task_in_progress:::taskStatus
+     artifact_seller_uploads:::sellerAction
+     artifact_seller_confirms:::sellerAction
+     artifact_submission_valid:::decision
+     artifact_submission_rejected:::terminal
+     artifact_system_creates:::systemAction
+     artifact_submitted:::artifactStatus
+     artifact_task_delivered:::taskStatus
+     artifact_system_sets_review:::systemAction
+     artifact_all_delivered:::decision
+     artifact_order_active:::orderStatus
+     artifact_order_delivered:::orderStatus
+     artifact_queue_running:::queueStatus
+     artifact_review_outcome:::decision
+     artifact_buyer_approves:::buyerAction
+     artifact_system_auto_approves:::systemAction
+     artifact_approved:::artifactStatus
+     artifact_task_completed:::taskStatus
+     artifact_system_records_earning:::systemAction
+     artifact_earning_record:::earningObject
+     artifact_more_tasks:::decision
+     artifact_system_schedules_next:::systemAction
+     artifact_next_task:::taskStatus
+     artifact_next_end:::terminal
+     artifact_order_completed:::orderStatus
+     artifact_queue_released:::queueStatus
+     artifact_completion_end:::terminal
+     artifact_revision_connector:::terminal
+     artifact_dispute_connector:::terminal
+     artifact_revision_start:::terminal
+     artifact_revision_task_in_progress:::taskStatus
+     artifact_seller_resubmits:::sellerAction
+     artifact_system_creates_next:::systemAction
+     artifact_new_submitted:::artifactStatus
+     artifact_review_again:::terminal
+     artifact_temp_note:::note
+     artifact_history_note:::note
+     artifact_current_note:::note
+     artifact_review_note:::note
+     artifact_race_note:::note
+     artifact_earning_note:::note
+     artifact_allocation_note:::note
+    classDef terminal fill:#1E3A5F,color:#FFFFFF,stroke:#102A43,stroke-width:2px
+    classDef buyerAction fill:#DCEEFF,color:#102A43,stroke:#1976D2,stroke-width:2px
+    classDef sellerAction fill:#EDE3F7,color:#2D1B45,stroke:#7B1FA2,stroke-width:2px
+    classDef systemAction fill:#DDF3E4,color:#123524,stroke:#2E7D32,stroke-width:2px
+    classDef decision fill:#FFFFFF,color:#111827,stroke:#374151,stroke-width:2px
+    classDef orderStatus fill:#FFE0B2,color:#4A2A00,stroke:#EF6C00,stroke-width:2px
+    classDef taskStatus fill:#FFF3CD,color:#3D2F00,stroke:#B7791F,stroke-width:2px
+    classDef artifactStatus fill:#E2E8F0,color:#1E293B,stroke:#64748B,stroke-width:2px
+    classDef queueStatus fill:#D7F2F8,color:#063B46,stroke:#00838F,stroke-width:2px
+    classDef earningObject fill:#F3E8FF,color:#3B0764,stroke:#9333EA,stroke-width:2px
+    classDef note fill:#FFF8E1,color:#3E2F17,stroke:#8D6E63,stroke-width:1.5px,stroke-dasharray:5 3

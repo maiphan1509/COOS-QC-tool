@@ -1,0 +1,246 @@
+---
+config:
+  layout: elk
+---
+flowchart TB
+ subgraph overview_legend["Legend"]
+    direction LR
+        overview_legend_terminal(("Start / end"))
+        overview_legend_buyer("Buyer action")
+        overview_legend_seller("Seller action")
+        overview_legend_system("System action")
+        overview_legend_decision{"Decision"}
+        overview_legend_order(["Order status"])
+        overview_legend_task(["Task status"])
+        overview_legend_queue(["Queue status"])
+        overview_legend_artifact(["Artifact status"])
+        overview_legend_note["Policy / timing note"]
+  end
+ subgraph overview_checkout["Phase 1 — Checkout and Payment"]
+    direction TB
+        overview_start(("Start: Buyer considers a purchase"))
+        overview_buyer_reviews_forecast("Buyer: Review Seller availability,<br>queue estimate, and projected dates")
+        overview_buyer_submits_checkout("Buyer: Select one Fab and Package,<br>quantity one to three, and one brief per Task")
+        overview_system_validates_checkout("System: Validate Buyer, offer,<br>Seller availability, and queue capacity")
+        overview_checkout_valid{"Is checkout eligible?"}
+        overview_checkout_unavailable(("End: Checkout unavailable"))
+        overview_system_reserves_checkout("System: Create checkout records<br>and reserve one queue slot")
+        overview_order_new(["Order status: NEW"])
+        overview_payment_confirmed{"Is a valid payment confirmed?"}
+        overview_system_handles_unpaid_checkout("System: Allow valid retry or close<br>the unpaid checkout under guard rules")
+        overview_order_closed(["Order status: CLOSED"])
+        overview_queue_released_unpaid(["Queue status: RELEASED"])
+        overview_unpaid_end(("End: Unpaid Order closed"))
+        overview_order_ready(["Order status: READY"])
+        overview_system_orchestrates_order("System: Provision Tasks and activate<br>the paid Order idempotently")
+        overview_task_new(["All Task statuses: NEW"])
+        overview_order_active(["Order status: ACTIVE"])
+  end
+ subgraph overview_execution["Phase 2 — Queue and Sequential Execution"]
+    direction TB
+        overview_seller_has_running{"Does the Seller already have<br>a RUNNING Order?"}
+        overview_queue_waiting(["Queue status: WAITING"])
+        overview_system_waits_fifo("System: Keep the Order in strict FIFO<br>and refresh projected dates")
+        overview_oldest_eligible{"Is this the oldest eligible<br>WAITING Order?"}
+        overview_queue_running(["Queue status: RUNNING"])
+        overview_system_starts_task("System: Start the first unfinished Task<br>at a valid Seller working time")
+        overview_task_in_progress(["Current Task status: IN_PROGRESS"])
+        overview_delivery_on_time{"Does Seller confirm a valid delivery<br>at or before the Task deadline?"}
+        overview_seller_confirms_delivery("Seller: Confirm official delivery")
+        overview_artifact_submitted(["Current Artifact status: SUBMITTED"])
+        overview_task_delivered(["Current Task status: DELIVERED"])
+        overview_last_unfinished_task{"Is this the last unfinished Task<br>in the Order?"}
+        overview_order_active_review(["Order status: ACTIVE"])
+        overview_order_delivered(["Order status: DELIVERED"])
+  end
+ subgraph overview_review["Phase 3 — Review and Outcome"]
+    direction TB
+        overview_buyer_acts_in_time{"Does Buyer act before<br>the review deadline?"}
+        overview_system_auto_approves("System: Automatically approve<br>the current Artifact")
+        overview_buyer_outcome{"Which valid outcome<br>does Buyer choose?"}
+        overview_buyer_approves("Buyer: Approve the current Artifact")
+        overview_artifact_approved(["Current Artifact status: APPROVED"])
+        overview_task_completed(["Current Task status: COMPLETED"])
+        overview_system_records_earning("System: Record Seller earning<br>for the completed Task exactly once")
+        overview_more_tasks{"Are there unfinished Tasks?"}
+        overview_system_schedules_next("System: Schedule the next Task<br>in sequence")
+        overview_buyer_requests_revision("Buyer: Request an eligible revision")
+        overview_system_accepts_revision("System: Apply an accepted revision<br>and its validated duration")
+        overview_buyer_opens_dispute("Buyer: Open an eligible Dispute")
+        overview_task_disputed(["Current Task status: DISPUTED"])
+        overview_later_tasks_on_hold(["Later Task statuses: ON_HOLD"])
+        overview_queue_blocked(["Queue status: BLOCKED"])
+        overview_system_promotes_after_block("System: Promote the oldest<br>eligible WAITING Order")
+        overview_dispute_end(("End: Dispute OPEN;<br>resolution is deferred"))
+        overview_order_completed(["Order status: COMPLETED"])
+        overview_queue_released_completed(["Queue status: RELEASED"])
+        overview_completed_end(("End: Order completed"))
+  end
+ subgraph overview_cancellation["Exception — Seller Non-Delivery"]
+    direction TB
+        overview_system_cancels_current("System: Cancel the overdue current Task")
+        overview_current_task_canceled(["Current Task status: CANCELED"])
+        overview_system_cancels_later("System: Cancel all later<br>NEW or ON_HOLD Tasks")
+        overview_later_tasks_canceled(["Later Task statuses: CANCELED"])
+        overview_order_canceled(["Order status: CANCELED"])
+        overview_queue_released_canceled(["Queue status: RELEASED"])
+        overview_system_marks_finance("System: Mark canceled Task amounts<br>for future financial resolution")
+        overview_system_promotes_after_cancel("System: Promote the oldest<br>eligible WAITING Order")
+        overview_canceled_end(("End: Order canceled;<br>refund is deferred"))
+  end
+    overview_start --> overview_buyer_reviews_forecast
+    overview_buyer_reviews_forecast --> overview_buyer_submits_checkout
+    overview_buyer_submits_checkout --> overview_system_validates_checkout
+    overview_system_validates_checkout --> overview_checkout_valid
+    overview_checkout_valid -- No --> overview_checkout_unavailable
+    overview_checkout_valid -- Yes --> overview_system_reserves_checkout
+    overview_system_reserves_checkout --> overview_order_new
+    overview_order_new --> overview_payment_confirmed
+    overview_payment_confirmed -- No valid success --> overview_system_handles_unpaid_checkout
+    overview_system_handles_unpaid_checkout --> overview_order_closed
+    overview_order_closed --> overview_queue_released_unpaid
+    overview_queue_released_unpaid --> overview_unpaid_end
+    overview_payment_confirmed -- Confirmed --> overview_order_ready
+    overview_order_ready --> overview_system_orchestrates_order
+    overview_system_orchestrates_order --> overview_task_new
+    overview_task_new --> overview_order_active
+    overview_order_active --> overview_seller_has_running
+    overview_seller_has_running -- Yes --> overview_queue_waiting
+    overview_queue_waiting --> overview_system_waits_fifo
+    overview_system_waits_fifo --> overview_oldest_eligible
+    overview_oldest_eligible -- No --> overview_system_waits_fifo
+    overview_oldest_eligible -- Yes, after release or block --> overview_queue_running
+    overview_seller_has_running -- No --> overview_queue_running
+    overview_queue_running --> overview_system_starts_task
+    overview_system_starts_task --> overview_task_in_progress
+    overview_task_in_progress --> overview_delivery_on_time
+    overview_delivery_on_time -- Yes --> overview_seller_confirms_delivery
+    overview_seller_confirms_delivery --> overview_artifact_submitted
+    overview_artifact_submitted --> overview_task_delivered
+    overview_task_delivered --> overview_last_unfinished_task
+    overview_last_unfinished_task -- No --> overview_order_active_review
+    overview_last_unfinished_task -- Yes --> overview_order_delivered
+    overview_order_active_review --> overview_buyer_acts_in_time
+    overview_order_delivered --> overview_buyer_acts_in_time
+    overview_buyer_acts_in_time -- No --> overview_system_auto_approves
+    overview_system_auto_approves --> overview_artifact_approved
+    overview_buyer_acts_in_time -- Yes --> overview_buyer_outcome
+    overview_buyer_outcome -- Approve --> overview_buyer_approves
+    overview_buyer_approves --> overview_artifact_approved
+    overview_artifact_approved --> overview_task_completed
+    overview_task_completed --> overview_system_records_earning
+    overview_system_records_earning --> overview_more_tasks
+    overview_more_tasks -- Yes --> overview_system_schedules_next
+    overview_system_schedules_next --> overview_task_in_progress
+    overview_more_tasks -- No --> overview_order_completed
+    overview_order_completed --> overview_queue_released_completed
+    overview_queue_released_completed --> overview_completed_end
+    overview_buyer_outcome -- Request revision --> overview_buyer_requests_revision
+    overview_buyer_requests_revision --> overview_system_accepts_revision
+    overview_system_accepts_revision --> overview_task_in_progress
+    overview_buyer_outcome -- Open eligible dispute --> overview_buyer_opens_dispute
+    overview_buyer_opens_dispute --> overview_task_disputed
+    overview_task_disputed --> overview_later_tasks_on_hold
+    overview_later_tasks_on_hold --> overview_queue_blocked
+    overview_queue_blocked --> overview_system_promotes_after_block
+    overview_system_promotes_after_block --> overview_dispute_end
+    overview_delivery_on_time -- No --> overview_system_cancels_current
+    overview_system_cancels_current --> overview_current_task_canceled
+    overview_current_task_canceled --> overview_system_cancels_later
+    overview_system_cancels_later --> overview_later_tasks_canceled
+    overview_later_tasks_canceled --> overview_order_canceled
+    overview_order_canceled --> overview_queue_released_canceled
+    overview_queue_released_canceled --> overview_system_marks_finance
+    overview_system_marks_finance --> overview_system_promotes_after_cancel
+    overview_system_promotes_after_cancel --> overview_canceled_end
+    overview_forecast_note["Policy: Queue position and projected dates are estimates;<br>earlier revisions or disputes can change them"] -. Explains .-> overview_buyer_reviews_forecast
+    overview_payment_note["Policy: Payment pending, retry, expiry, late success,<br>and duplicate payment follow the detailed Payment Lifecycle"] -. Applies to .-> overview_payment_confirmed
+    overview_time_note["Timing: Delivery uses Seller working hours;<br>action-response timeouts use calendar hours"] -. Applies to .-> overview_delivery_on_time & overview_buyer_acts_in_time
+    overview_audit_note["Policy: Every business transition records actor, reason,<br>UTC time, audit, and required notification"] -. Applies throughout .-> overview_start
+    overview_revision_note["Policy: Denial, withdrawal, auto-accept, and resubmission<br>follow the detailed Revision and Dispute Lifecycle"] -. Applies to .-> overview_buyer_requests_revision
+
+     overview_legend_terminal:::terminal
+     overview_legend_buyer:::buyerAction
+     overview_legend_seller:::sellerAction
+     overview_legend_system:::systemAction
+     overview_legend_decision:::decision
+     overview_legend_order:::orderStatus
+     overview_legend_task:::taskStatus
+     overview_legend_queue:::queueStatus
+     overview_legend_artifact:::artifactStatus
+     overview_legend_note:::note
+     overview_start:::terminal
+     overview_buyer_reviews_forecast:::buyerAction
+     overview_buyer_submits_checkout:::buyerAction
+     overview_system_validates_checkout:::systemAction
+     overview_checkout_valid:::decision
+     overview_checkout_unavailable:::terminal
+     overview_system_reserves_checkout:::systemAction
+     overview_order_new:::orderStatus
+     overview_payment_confirmed:::decision
+     overview_system_handles_unpaid_checkout:::systemAction
+     overview_order_closed:::orderStatus
+     overview_queue_released_unpaid:::queueStatus
+     overview_unpaid_end:::terminal
+     overview_order_ready:::orderStatus
+     overview_system_orchestrates_order:::systemAction
+     overview_task_new:::taskStatus
+     overview_order_active:::orderStatus
+     overview_seller_has_running:::decision
+     overview_queue_waiting:::queueStatus
+     overview_system_waits_fifo:::systemAction
+     overview_oldest_eligible:::decision
+     overview_queue_running:::queueStatus
+     overview_system_starts_task:::systemAction
+     overview_task_in_progress:::taskStatus
+     overview_delivery_on_time:::decision
+     overview_seller_confirms_delivery:::sellerAction
+     overview_artifact_submitted:::artifactStatus
+     overview_task_delivered:::taskStatus
+     overview_last_unfinished_task:::decision
+     overview_order_active_review:::orderStatus
+     overview_order_delivered:::orderStatus
+     overview_buyer_acts_in_time:::decision
+     overview_system_auto_approves:::systemAction
+     overview_buyer_outcome:::decision
+     overview_buyer_approves:::buyerAction
+     overview_artifact_approved:::artifactStatus
+     overview_task_completed:::taskStatus
+     overview_system_records_earning:::systemAction
+     overview_more_tasks:::decision
+     overview_system_schedules_next:::systemAction
+     overview_buyer_requests_revision:::buyerAction
+     overview_system_accepts_revision:::systemAction
+     overview_buyer_opens_dispute:::buyerAction
+     overview_task_disputed:::taskStatus
+     overview_later_tasks_on_hold:::taskStatus
+     overview_queue_blocked:::queueStatus
+     overview_system_promotes_after_block:::systemAction
+     overview_dispute_end:::terminal
+     overview_order_completed:::orderStatus
+     overview_queue_released_completed:::queueStatus
+     overview_completed_end:::terminal
+     overview_system_cancels_current:::systemAction
+     overview_current_task_canceled:::taskStatus
+     overview_system_cancels_later:::systemAction
+     overview_later_tasks_canceled:::taskStatus
+     overview_order_canceled:::orderStatus
+     overview_queue_released_canceled:::queueStatus
+     overview_system_marks_finance:::systemAction
+     overview_system_promotes_after_cancel:::systemAction
+     overview_canceled_end:::terminal
+     overview_forecast_note:::note
+     overview_payment_note:::note
+     overview_time_note:::note
+     overview_audit_note:::note
+     overview_revision_note:::note
+    classDef terminal fill:#1E3A5F,color:#FFFFFF,stroke:#102A43,stroke-width:2px
+    classDef buyerAction fill:#DCEEFF,color:#102A43,stroke:#1976D2,stroke-width:2px
+    classDef sellerAction fill:#EDE3F7,color:#2D1B45,stroke:#7B1FA2,stroke-width:2px
+    classDef systemAction fill:#DDF3E4,color:#123524,stroke:#2E7D32,stroke-width:2px
+    classDef decision fill:#FFFFFF,color:#111827,stroke:#374151,stroke-width:2px
+    classDef orderStatus fill:#FFE0B2,color:#4A2A00,stroke:#EF6C00,stroke-width:2px
+    classDef taskStatus fill:#FFF3CD,color:#3D2F00,stroke:#B7791F,stroke-width:2px
+    classDef queueStatus fill:#D7F2F8,color:#063B46,stroke:#00838F,stroke-width:2px
+    classDef artifactStatus fill:#E2E8F0,color:#1E293B,stroke:#64748B,stroke-width:2px
+    classDef note fill:#FFF8E1,color:#3E2F17,stroke:#8D6E63,stroke-width:1.5px,stroke-dasharray:5 3

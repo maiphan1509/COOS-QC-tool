@@ -1,0 +1,197 @@
+---
+config:
+  theme: redux
+  layout: elk
+---
+flowchart TB
+subgraph revision_legend["Legend"]
+        direction LR
+        revision_legend_terminal(("Start / end")):::terminal
+        revision_legend_buyer("Buyer action"):::buyerAction
+        revision_legend_seller("Seller action"):::sellerAction
+        revision_legend_system("System action"):::systemAction
+        revision_legend_decision{"Decision"}:::decision
+        revision_legend_order(["Order status"]):::orderStatus
+        revision_legend_task(["Task status"]):::taskStatus
+        revision_legend_artifact(["Artifact status"]):::artifactStatus
+        revision_legend_request(["Revision Request status"]):::revisionStatus
+        revision_legend_dispute(["Dispute status"]):::disputeStatus
+        revision_legend_queue(["Queue status"]):::queueStatus
+        revision_legend_note["Policy / timing note"]:::note
+    end
+
+    subgraph revision_creation["Create and manage an open request"]
+        direction TB
+        revision_start(("Start: Buyer reviews a<br/>SUBMITTED Artifact")):::terminal
+        revision_artifact_submitted(["Current Artifact status: SUBMITTED"]):::artifactStatus
+        revision_buyer_requests("Buyer: Request a revision<br/>with reason and instructions"):::buyerAction
+        revision_eligible{"Is revision quota available<br/>and no conflicting request exists?"}:::decision
+        revision_request_rejected(("End: Revision request rejected;<br/>Buyer must use another eligible outcome")):::terminal
+        revision_system_creates("System: Create the Revision Request<br/>and pause the Buyer review timer"):::systemAction
+        revision_request_new(["Revision Request status: NEW"]):::revisionStatus
+        revision_artifact_requested(["Artifact status: REVISION_REQUESTED"]):::artifactStatus
+        revision_system_sets_response("System: Set the Seller response deadline"):::systemAction
+        revision_open_outcome{"What happens while the<br/>Revision Request is NEW?"}:::decision
+        revision_buyer_edits("Buyer: Edit the open Revision Request"):::buyerAction
+    end
+
+    subgraph revision_withdrawal["Buyer withdrawal"]
+        direction TB
+        revision_buyer_withdraws("Buyer: Withdraw the Revision Request"):::buyerAction
+        revision_request_withdrawn(["Revision Request status: WITHDRAWN"]):::revisionStatus
+        revision_artifact_restored_withdraw(["Artifact status: SUBMITTED"]):::artifactStatus
+        revision_system_resumes_timer("System: Resume the remaining<br/>Buyer review time"):::systemAction
+        revision_review_time_left{"Does any Buyer review<br/>time remain?"}:::decision
+        revision_approve_only(("End: Buyer may approve;<br/>withdrawal alone does not enable Dispute")):::terminal
+        revision_system_approves_after_withdraw("System: Automatically approve the Artifact"):::systemAction
+        revision_withdraw_auto_end(("End: Complete the Task and earning side effects")):::terminal
+    end
+
+    subgraph revision_acceptance["Seller or System accepts"]
+        direction TB
+        revision_seller_accepts("Seller: Accept the request<br/>and enter a revision duration"):::sellerAction
+        revision_duration_valid{"Is duration a positive whole hour<br/>shorter than original delivery duration?"}:::decision
+        revision_invalid_duration(("End: Acceptance rejected;<br/>Seller must enter a valid duration")):::terminal
+        revision_system_auto_accepts("System: Automatically accept<br/>after Seller response timeout"):::systemAction
+        revision_system_calculates_duration("System: Calculate a valid revision duration<br/>from configured percentage and minimum"):::systemAction
+        revision_request_accepted(["Revision Request status: ACCEPTED"]):::revisionStatus
+        revision_system_consumes_quota("System: Consume one revision quota unit"):::systemAction
+        revision_task_in_progress(["Task status: IN_PROGRESS"]):::taskStatus
+        revision_system_sets_due("System: Set revision deadline<br/>using Seller working hours"):::systemAction
+        revision_system_recalculates("System: Recalculate projected dates<br/>for later WAITING Orders"):::systemAction
+        revision_seller_resubmits("Seller: Confirm revised delivery<br/>at or before the revision deadline"):::sellerAction
+        revision_system_creates_artifact("System: Create a new sequential Artifact"):::systemAction
+        revision_new_artifact(["New Artifact status: SUBMITTED"]):::artifactStatus
+        revision_review_again(("End: Begin a new Buyer review window")):::terminal
+    end
+
+    subgraph revision_denial["Seller denial and Buyer response"]
+        direction TB
+        revision_seller_denies("Seller: Deny the request<br/>and provide a reason"):::sellerAction
+        revision_request_denied(["Revision Request status: DENIED"]):::revisionStatus
+        revision_artifact_restored_denial(["Artifact status: SUBMITTED"]):::artifactStatus
+        revision_system_sets_buyer_deadline("System: Set the Buyer response deadline"):::systemAction
+        revision_denial_outcome{"What happens before the<br/>Buyer response deadline?"}:::decision
+        revision_buyer_approves("Buyer: Approve the current Artifact"):::buyerAction
+        revision_system_auto_approves_denial("System: Automatically approve<br/>after Buyer response timeout"):::systemAction
+        revision_approval_end(("End: Complete the Task and earning side effects")):::terminal
+        revision_buyer_opens_dispute_after_denial("Buyer: Open a Dispute"):::buyerAction
+    end
+
+    subgraph revision_dispute["Atomic Dispute outcome"]
+        direction TB
+        revision_dispute_start(("Start: Buyer attempts to open a Dispute")):::terminal
+        revision_dispute_eligible{"Has Seller denied this revision,<br/>or is no revision quota available?"}:::decision
+        revision_dispute_rejected(("End: Dispute rejected;<br/>Buyer must use an eligible outcome")):::terminal
+        revision_buyer_opens_dispute("Buyer: Submit Dispute reason<br/>and description"):::buyerAction
+        revision_system_rejects_artifact("System: Reject the current Artifact"):::systemAction
+        revision_artifact_rejected(["Artifact status: REJECTED"]):::artifactStatus
+        revision_task_disputed(["Current Task status: DISPUTED"]):::taskStatus
+        revision_system_holds_later("System: Hold every later unstarted Task"):::systemAction
+        revision_later_on_hold(["Later Task statuses: ON_HOLD"]):::taskStatus
+        revision_system_creates_dispute("System: Create the linked Dispute record"):::systemAction
+        revision_dispute_open(["Dispute status: OPEN"]):::disputeStatus
+        revision_order_active(["Order status: ACTIVE"]):::orderStatus
+        revision_system_marks_open("System: Mark the Order as having<br/>an open Dispute"):::systemAction
+        revision_queue_blocked(["Queue status: BLOCKED"]):::queueStatus
+        revision_has_waiting{"Is there an eligible<br/>WAITING Order?"}:::decision
+        revision_system_promotes("System: Promote the oldest<br/>eligible WAITING Order"):::systemAction
+        revision_dispute_end(("End: Resolution and refund are deferred;<br/>no Seller earning is recorded")):::terminal
+    end
+
+    revision_quota_note["Policy: Initial delivery does not consume quota;<br/>quota is consumed only when a request becomes ACCEPTED"]:::note
+    revision_single_request_note["Policy: One Artifact may have only one Revision Request;<br/>withdrawn or denied requests cannot be replaced on that Artifact"]:::note
+    revision_timeout_note["Timing: Seller response and Buyer response after denial<br/>each default to 24 elapsed calendar hours"]:::note
+    revision_auto_duration_note["Policy: Automatic duration normally uses 50% of original delivery,<br/>at least one hour and always shorter than original duration"]:::note
+    revision_history_note["Policy: The source Artifact remains REVISION_REQUESTED as history;<br/>accepted revision delivery creates a new Artifact"]:::note
+    revision_dispute_note["Atomic outcome: Artifact REJECTED, current Task DISPUTED,<br/>later Tasks ON_HOLD, Dispute OPEN, and queue BLOCKED"]:::note
+    revision_scope_note["Scope: Feature 04 does not resolve Disputes, issue refunds,<br/>or implement re-enqueue after resolution"]:::note
+
+    revision_start --> revision_artifact_submitted
+    revision_artifact_submitted --> revision_buyer_requests
+    revision_buyer_requests --> revision_eligible
+    revision_eligible -- "No" --> revision_request_rejected
+    revision_eligible -- "Yes" --> revision_system_creates
+    revision_system_creates --> revision_request_new
+    revision_request_new --> revision_artifact_requested
+    revision_artifact_requested --> revision_system_sets_response
+    revision_system_sets_response --> revision_open_outcome
+    revision_open_outcome -- "Buyer edits" --> revision_buyer_edits
+    revision_buyer_edits --> revision_request_new
+
+    revision_open_outcome -- "Buyer withdraws" --> revision_buyer_withdraws
+    revision_buyer_withdraws --> revision_request_withdrawn
+    revision_request_withdrawn --> revision_artifact_restored_withdraw
+    revision_artifact_restored_withdraw --> revision_system_resumes_timer
+    revision_system_resumes_timer --> revision_review_time_left
+    revision_review_time_left -- "Yes" --> revision_approve_only
+    revision_review_time_left -- "No" --> revision_system_approves_after_withdraw
+    revision_system_approves_after_withdraw --> revision_withdraw_auto_end
+
+    revision_open_outcome -- "Seller accepts" --> revision_seller_accepts
+    revision_seller_accepts --> revision_duration_valid
+    revision_duration_valid -- "No" --> revision_invalid_duration
+    revision_duration_valid -- "Yes" --> revision_request_accepted
+    revision_open_outcome -- "No Seller response before deadline" --> revision_system_auto_accepts
+    revision_system_auto_accepts --> revision_system_calculates_duration
+    revision_system_calculates_duration --> revision_request_accepted
+    revision_request_accepted --> revision_system_consumes_quota
+    revision_system_consumes_quota --> revision_task_in_progress
+    revision_task_in_progress --> revision_system_sets_due
+    revision_system_sets_due --> revision_system_recalculates
+    revision_system_recalculates --> revision_seller_resubmits
+    revision_seller_resubmits --> revision_system_creates_artifact
+    revision_system_creates_artifact --> revision_new_artifact
+    revision_new_artifact --> revision_review_again
+
+    revision_open_outcome -- "Seller denies" --> revision_seller_denies
+    revision_seller_denies --> revision_request_denied
+    revision_request_denied --> revision_artifact_restored_denial
+    revision_artifact_restored_denial --> revision_system_sets_buyer_deadline
+    revision_system_sets_buyer_deadline --> revision_denial_outcome
+    revision_denial_outcome -- "Buyer approves" --> revision_buyer_approves
+    revision_buyer_approves --> revision_approval_end
+    revision_denial_outcome -- "No action before deadline" --> revision_system_auto_approves_denial
+    revision_system_auto_approves_denial --> revision_approval_end
+    revision_denial_outcome -- "Buyer opens Dispute" --> revision_buyer_opens_dispute_after_denial
+    revision_buyer_opens_dispute_after_denial --> revision_system_rejects_artifact
+
+    revision_dispute_start --> revision_dispute_eligible
+    revision_dispute_eligible -- "No" --> revision_dispute_rejected
+    revision_dispute_eligible -- "Yes" --> revision_buyer_opens_dispute
+    revision_buyer_opens_dispute --> revision_system_rejects_artifact
+    revision_system_rejects_artifact --> revision_artifact_rejected
+    revision_artifact_rejected --> revision_task_disputed
+    revision_task_disputed --> revision_system_holds_later
+    revision_system_holds_later --> revision_later_on_hold
+    revision_later_on_hold --> revision_system_creates_dispute
+    revision_system_creates_dispute --> revision_dispute_open
+    revision_dispute_open --> revision_order_active
+    revision_order_active --> revision_system_marks_open
+    revision_system_marks_open --> revision_queue_blocked
+    revision_queue_blocked --> revision_has_waiting
+    revision_has_waiting -- "Yes" --> revision_system_promotes
+    revision_system_promotes --> revision_dispute_end
+    revision_has_waiting -- "No" --> revision_dispute_end
+
+    revision_quota_note -. "Applies to" .-> revision_eligible
+    revision_single_request_note -. "Applies throughout" .-> revision_request_new
+    revision_timeout_note -. "Applies to" .-> revision_system_sets_response
+    revision_timeout_note -. "Applies to" .-> revision_system_sets_buyer_deadline
+    revision_auto_duration_note -. "Applies to" .-> revision_system_calculates_duration
+    revision_history_note -. "Applies to" .-> revision_system_creates_artifact
+    revision_dispute_note -. "Explains" .-> revision_system_rejects_artifact
+    revision_scope_note -. "Defines boundary" .-> revision_dispute_end
+
+    classDef terminal fill:#1E3A5F,color:#FFFFFF,stroke:#102A43,stroke-width:2px
+    classDef buyerAction fill:#DCEEFF,color:#102A43,stroke:#1976D2,stroke-width:2px
+    classDef sellerAction fill:#EDE3F7,color:#2D1B45,stroke:#7B1FA2,stroke-width:2px
+    classDef systemAction fill:#DDF3E4,color:#123524,stroke:#2E7D32,stroke-width:2px
+    classDef decision fill:#FFFFFF,color:#111827,stroke:#374151,stroke-width:2px
+    classDef orderStatus fill:#FFE0B2,color:#4A2A00,stroke:#EF6C00,stroke-width:2px
+    classDef taskStatus fill:#FFF3CD,color:#3D2F00,stroke:#B7791F,stroke-width:2px
+    classDef artifactStatus fill:#E2E8F0,color:#1E293B,stroke:#64748B,stroke-width:2px
+    classDef revisionStatus fill:#E0E7FF,color:#1E1B4B,stroke:#4F46E5,stroke-width:2px
+    classDef disputeStatus fill:#FADBD8,color:#4A0C0C,stroke:#A61B1B,stroke-width:2px
+    classDef queueStatus fill:#D7F2F8,color:#063B46,stroke:#00838F,stroke-width:2px
+    classDef note fill:#FFF8E1,color:#3E2F17,stroke:#8D6E63,stroke-width:1.5px,stroke-dasharray:5 3

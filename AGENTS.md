@@ -4,7 +4,7 @@ Instructions for any coding agent (Codex, Claude Code, Cursor, Copilot, Gemini C
 
 ## What this repository is
 
-A skill pack for COOS and COAD product/QA work. It ships no application code. The deliverable is the skill set in `.codex/skills/`, mirrored to other agent runtimes and packaged for install.
+A skill pack for COOS and COAD product/QA work. It ships no application code. The deliverable is the skill set in `.codex/skills/`, mirrored to other agent runtimes and packaged for install, plus the COOS platform reference under `platforms/` (see below).
 
 ## Skill inventory
 
@@ -85,6 +85,26 @@ Plugin users only receive changes when the version rises. Bump every manifest an
 ```
 
 Add `--tag` to also commit and create `v1.1.0`, then `git push --follow-tags`. Never edit the `version` fields by hand; they must agree across `plugin.json` and `marketplace.json`, and CI checks that they do.
+
+## COOS platform reference (`platforms/`)
+
+`platforms/` is the observed-behavior knowledge base for the three COOS portals. Read it before producing any COOS deliverable so screens, routes, statuses, and timing rules come from the product instead of from memory.
+
+| Path | Use it for |
+| --- | --- |
+| [`platforms/AGENTS.md`](platforms/AGENTS.md) | Platform map (Buyer `mynew1.net`, Seller `seller.mynew1.net`, Admin `admin.mynew1.net`), shared foundations (auth, locales, notifications, audit, files, payments), glossary, status catalog, platform configuration values, route inventory (260 routes), known staging defects |
+| [`platforms/buyer/AGENTS.md`](platforms/buyer/AGENTS.md) | Buyer Portal screens (home, categories, fab detail, checkout, orders, order detail, account, auth) and all 67 `buyer.*` routes |
+| [`platforms/seller/AGENTS.md`](platforms/seller/AGENTS.md) | Seller Portal sidebar, datatables, forms (profile, artifact submit, revision accept/deny), detail views, and all 67 `seller.*` routes |
+| [`platforms/admin/AGENTS.md`](platforms/admin/AGENTS.md) | Admin Portal IAM, Fabricas, Finance, Operation, Configuration, Governance modules and all 122 `admin.*` routes |
+| [`platforms/workflows/`](platforms/workflows/AGENTS.md) | Four Mermaid `.mmd` lifecycle diagrams (order overview, seller queue, artifact delivery, revision and dispute) with a node-to-route mapping and the configuration keys behind each timing rule |
+
+Rules for using and maintaining it:
+
+- Skill routing stays the same: `coos-product-docs`, `coos-qa-test-cases`, and `coos-business-diagrams` decide *how* to write; `platforms/` supplies *what* the product does. Cite the portal file and route name (for example `buyer.account.orders.show`) in acceptance criteria and test steps.
+- Lines starting with `Unresolved requirement:` mark behavior that was not observable on 2026-09-10. Carry them into deliverables as open questions; never resolve them by assumption.
+- The reference is a staging snapshot. When a task depends on a route or value, re-check it on the environment before asserting it, and update the file with the new date.
+- Never add personal data, credentials, CSRF tokens, or presigned URLs. Seller display names of test accounts are the only identifiers allowed.
+- Diagram files in `platforms/workflows/` are the source of truth for lifecycle rules; if staging contradicts a diagram, record the contradiction in the portal file instead of editing the diagram.
 
 ## Output conventions
 
