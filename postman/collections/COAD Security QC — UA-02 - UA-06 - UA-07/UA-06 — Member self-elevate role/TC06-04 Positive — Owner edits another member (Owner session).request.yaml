@@ -1,0 +1,36 @@
+$kind: http-request
+name: TC06-04 Positive — Owner edits another member (Owner session) → 302
+description: Owner session, target = member. Expected 302 both before and after fix. Undo the role after.
+url: "{{advertiser_base_url}}/iam/members/accounts/{{other_member_id}}/role-and-permission?type=advertiser"
+method: POST
+headers:
+  Accept: application/json
+  X-Requested-With: XMLHttpRequest
+  Content-Type: application/json
+  X-XSRF-TOKEN: "{{xsrf_token}}"
+  Cookie: X-Org={{x_org}}; XSRF-TOKEN={{xsrf_cookie}}; coad_session={{coad_session}}
+queryParams:
+  type: advertiser
+body:
+  type: json
+  content: |-
+    {
+      "roles": {
+        "ADV.SUPERVISOR": {
+          "label": "Supervisor",
+          "value": true,
+          "description": "Can supervise and manage advertiser operations",
+          "code": "ADV.SUPERVISOR"
+        }
+      }
+    }
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test('Owner may edit member (302)', function () {
+        pm.expect(pm.response.code).to.be.oneOf([302, 200]);
+      });
+    language: text/javascript
+settings:
+  followRedirects: false
+order: 4000

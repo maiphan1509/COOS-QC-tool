@@ -1,0 +1,20 @@
+$kind: http-request
+name: TC07-03 Positive — correct group membership (A1 + membership A1) → 302
+description: membership_A1_id genuinely belongs to group A1. Expected 302 both before and after fix; membership removed from A1. Re-add after if needed.
+url: "{{advertiser_base_url}}/iam/user-groups/{{group_A1_id}}/members/{{membership_A1_id}}"
+method: DELETE
+headers:
+  Accept: application/json
+  X-Requested-With: XMLHttpRequest
+  X-XSRF-TOKEN: "{{xsrf_token}}"
+  Cookie: X-Org={{x_org}}; XSRF-TOKEN={{xsrf_cookie}}; coad_session={{coad_session}}
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test('Correct membership deleted (302)', function () {
+        pm.expect(pm.response.code).to.be.oneOf([302, 200]);
+      });
+    language: text/javascript
+settings:
+  followRedirects: false
+order: 3000

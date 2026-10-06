@@ -1,0 +1,20 @@
+$kind: http-request
+name: TC07-02 Cross-group same org (A1 + membership A2, session A) → 404
+description: "membership_A2_id belongs to group A2, URL parent = group A1 (same org). After fix: 404, membership stays in A2. Proves scoping is per parent group, not just per org."
+url: "{{advertiser_base_url}}/iam/user-groups/{{group_A1_id}}/members/{{membership_A2_id}}"
+method: DELETE
+headers:
+  Accept: application/json
+  X-Requested-With: XMLHttpRequest
+  X-XSRF-TOKEN: "{{xsrf_token}}"
+  Cookie: X-Org={{x_org}}; XSRF-TOKEN={{xsrf_cookie}}; coad_session={{coad_session}}
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test('Cross-group membership scoped (404)', function () {
+        pm.response.to.have.status(404);
+      });
+    language: text/javascript
+settings:
+  followRedirects: false
+order: 2000

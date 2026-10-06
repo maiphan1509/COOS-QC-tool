@@ -1,0 +1,31 @@
+$kind: http-request
+description: Run with Collection Runner + the attack_status.csv data file (running, suspended, internal_approved, paused, stopped, out_of_budget, rejected, archived). After fix every row = 422.
+url: "{{advertiser_base_url}}/campaigns/{{campaign_id}}/versions/{{version_id}}"
+method: POST
+headers:
+  Accept: application/json
+  X-Requested-With: XMLHttpRequest
+  Content-Type: application/json
+  X-XSRF-TOKEN: "{{xsrf_token}}"
+  Cookie: X-Org={{x_org}}; XSRF-TOKEN={{xsrf_cookie}}; coad_session={{coad_session}}
+body:
+  type: json
+  content: |-
+    {
+      "version_no": 1,
+      "status": "{{attack_status}}",
+      "ads_type": "catfish"
+    }
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test('Privileged status rejected (422)', function () {
+        pm.response.to.have.status(422);
+        const b = pm.response.json();
+        pm.expect(b).to.have.property('errors');
+        pm.expect(b.errors).to.have.property('status');
+      });
+    language: text/javascript
+settings:
+  followRedirects: false
+order: 4000

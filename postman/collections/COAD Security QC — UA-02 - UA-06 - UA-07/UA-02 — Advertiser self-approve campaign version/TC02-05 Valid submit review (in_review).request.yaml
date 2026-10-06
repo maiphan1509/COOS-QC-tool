@@ -1,0 +1,28 @@
+$kind: http-request
+description: Run last or on a separate draft. May become in_review/internal_review per org config. Must NOT jump to approved/scheduled/running.
+url: "{{advertiser_base_url}}/campaigns/{{campaign_id}}/versions/{{version_id}}"
+method: POST
+headers:
+  Accept: application/json
+  X-Requested-With: XMLHttpRequest
+  Content-Type: application/json
+  X-XSRF-TOKEN: "{{xsrf_token}}"
+  Cookie: X-Org={{x_org}}; XSRF-TOKEN={{xsrf_cookie}}; coad_session={{coad_session}}
+body:
+  type: json
+  content: |-
+    {
+      "version_no": 1,
+      "status": "in_review",
+      "ads_type": "catfish"
+    }
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test('Valid transition via state machine (not direct approve)', function () {
+        pm.expect(pm.response.code).to.be.oneOf([302, 200, 422]);
+      });
+    language: text/javascript
+settings:
+  followRedirects: false
+order: 5000

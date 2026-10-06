@@ -1,0 +1,36 @@
+$kind: http-request
+name: TC06-05a Publisher self-escalate — main route (Member session) → 403
+description: "Load Publisher MEMBER session. After fix: 403, PUB.SUPERVISOR unchanged."
+url: "{{publisher_base_url}}/iam/members/accounts/{{self_account_id}}/role-and-permission?type=publisher"
+method: POST
+headers:
+  Accept: application/json
+  X-Requested-With: XMLHttpRequest
+  Content-Type: application/json
+  X-XSRF-TOKEN: "{{xsrf_token}}"
+  Cookie: X-Org={{x_org}}; XSRF-TOKEN={{xsrf_cookie}}; coad_session={{coad_session}}
+queryParams:
+  type: publisher
+body:
+  type: json
+  content: |-
+    {
+      "roles": {
+        "PUB.SUPERVISOR": {
+          "label": "Supervisor",
+          "value": true,
+          "description": "Supervisor",
+          "code": "PUB.SUPERVISOR"
+        }
+      }
+    }
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test('Publisher member cannot self-escalate (403)', function () {
+        pm.response.to.have.status(403);
+      });
+    language: text/javascript
+settings:
+  followRedirects: false
+order: 5000

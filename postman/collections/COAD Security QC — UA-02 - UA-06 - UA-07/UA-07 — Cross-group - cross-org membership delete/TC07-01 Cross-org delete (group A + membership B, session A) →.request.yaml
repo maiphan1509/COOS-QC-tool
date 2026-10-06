@@ -1,0 +1,20 @@
+$kind: http-request
+name: TC07-01 Cross-org delete (group A + membership B, session A) → 404
+description: "membership_B_id = user_group_members.id (NOT member_id) of a victim in Org B. Session + X-Org = Org A. After fix: 404, Org B membership intact. On legacy code it deletes — re-add victim to group B afterward."
+url: "{{advertiser_base_url}}/iam/user-groups/{{group_A_id}}/members/{{membership_B_id}}"
+method: DELETE
+headers:
+  Accept: application/json
+  X-Requested-With: XMLHttpRequest
+  X-XSRF-TOKEN: "{{xsrf_token}}"
+  Cookie: X-Org={{x_org}}; XSRF-TOKEN={{xsrf_cookie}}; coad_session={{coad_session}}
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test('Cross-org membership hidden (404)', function () {
+        pm.response.to.have.status(404);
+      });
+    language: text/javascript
+settings:
+  followRedirects: false
+order: 1000

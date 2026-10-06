@@ -1,0 +1,36 @@
+$kind: http-request
+name: TC06-01 Member bumps own Supervisor (Member session, self id) → 403
+description: "Load the MEMBER session cookies. Precondition: Internal Campaign Review = ON, member has >= UPDATE on Member Account/IAM. Owner first toggles Supervisor OFF. Send only the role under test. After fix: 403, Supervisor stays off."
+url: "{{advertiser_base_url}}/iam/members/accounts/{{self_account_id}}/role-and-permission?type=advertiser"
+method: POST
+headers:
+  Accept: application/json
+  X-Requested-With: XMLHttpRequest
+  Content-Type: application/json
+  X-XSRF-TOKEN: "{{xsrf_token}}"
+  Cookie: X-Org={{x_org}}; XSRF-TOKEN={{xsrf_cookie}}; coad_session={{coad_session}}
+queryParams:
+  type: advertiser
+body:
+  type: json
+  content: |-
+    {
+      "roles": {
+        "ADV.SUPERVISOR": {
+          "label": "Supervisor",
+          "value": true,
+          "description": "Can supervise and manage advertiser operations",
+          "code": "ADV.SUPERVISOR"
+        }
+      }
+    }
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test('Member cannot modify own roles (403)', function () {
+        pm.response.to.have.status(403);
+      });
+    language: text/javascript
+settings:
+  followRedirects: false
+order: 1000
