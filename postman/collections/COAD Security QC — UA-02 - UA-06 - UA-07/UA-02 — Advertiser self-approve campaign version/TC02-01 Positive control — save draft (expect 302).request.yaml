@@ -1,0 +1,31 @@
+---
+$kind: http-request
+description: Replace the raw body with the captured Save-draft payload; keep top-level status=draft. Campaign must stay draft.
+method: POST
+url: "{{advertiser_base_url}}/campaigns/{{campaign_id}}/versions/{{version_id}}"
+settings:
+  followRedirects: false
+headers:
+  Accept: application/json
+  X-Requested-With: XMLHttpRequest
+  Content-Type: application/json
+  X-XSRF-TOKEN: "{{xsrf_token}}"
+  Cookie: X-Org={{x_org}}; XSRF-TOKEN={{xsrf_cookie}}; coad_session={{coad_session}}
+body:
+  type: json
+  content: |-
+    {
+      "version_no": 1,
+      "status": "draft",
+      "ads_type": "catfish"
+    }
+scripts:
+  - type: beforeRequest
+    code: ""
+    language: text/javascript
+  - type: afterResponse
+    code: |-
+      pm.test('Draft save accepted', function () {
+        pm.expect(pm.response.code).to.be.oneOf([302, 200]);
+      });
+    language: text/javascript

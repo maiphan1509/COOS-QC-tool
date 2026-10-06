@@ -4,3 +4,6 @@ Thumbs.db
 __pycache__/
 *.bak.*
 ~$*
+
+# Postman Git-linked Local View — local only, not tracked
+.postman/

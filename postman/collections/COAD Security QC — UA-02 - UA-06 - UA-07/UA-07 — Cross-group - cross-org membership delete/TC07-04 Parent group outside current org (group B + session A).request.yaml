@@ -1,0 +1,20 @@
+$kind: http-request
+name: TC07-04 Parent group outside current org (group B + session A) → 404
+description: "Session + X-Org = Org A, URL parent group = Org B. After fix: 404, nothing deleted."
+url: "{{advertiser_base_url}}/iam/user-groups/{{group_B_id}}/members/{{any_membership_id}}"
+method: DELETE
+headers:
+  Accept: application/json
+  X-Requested-With: XMLHttpRequest
+  X-XSRF-TOKEN: "{{xsrf_token}}"
+  Cookie: X-Org={{x_org}}; XSRF-TOKEN={{xsrf_cookie}}; coad_session={{coad_session}}
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test('Foreign parent group hidden (404)', function () {
+        pm.response.to.have.status(404);
+      });
+    language: text/javascript
+settings:
+  followRedirects: false
+order: 4000

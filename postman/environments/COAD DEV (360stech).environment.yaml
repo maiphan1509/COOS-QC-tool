@@ -1,0 +1,16 @@
+name: COAD DEV (360stech)
+values:
+  - key: advertiser_base_url
+    value: 'https://advertiser.360stech.com'
+  - key: publisher_base_url
+    value: 'https://publisher.360stech.com'
+  - key: admin_base_url
+    value: 'https://admin.360stech.com'
+  - key: x_org
+    value: ''
+  - key: xsrf_token
+    value: ''
+  - key: xsrf_cookie
+    value: ''
+  - key: coad_session
+    value: ''
