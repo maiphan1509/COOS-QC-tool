@@ -3,17 +3,24 @@ name: COAD Security QC — UA-02 / UA-06 / UA-07
 description: |-
   Authorized QA verification of authorization fixes on the COAD DEV/UAT environment.
 
-  UA-02 — Advertiser self-approve campaign version (privilege escalation on status).
-  UA-06 — Member self-elevate role (vertical privilege escalation).
+  UA-02 — Advertiser self-approve campaign version (privilege escalation on status).  
+  UA-06 — Member self-elevate role (vertical privilege escalation).  
   UA-07 — Delete membership of another group/org (IDOR / broken object-level auth).
 
   HOW TO USE
+
   1. Import this collection + the COAD DEV environment file.
+      
   2. Capture a valid request from the browser (DevTools > Network > Copy as cURL) and paste the real body/cookies. Only swap the field under test.
+      
   3. Fill the collection variables (ids) and the environment variables (session/CSRF) for the account + org you are testing.
+      
   4. Follow-redirects is DISABLED per request so Laravel 302/419/403/404 stays visible.
+      
   5. Confirm post-condition in UI or DB — never conclude from HTTP status alone.
+      
   6. On legacy (pre-fix) code UA-06/UA-07 really change data — undo role/membership after.
+      
 
   Do not commit session cookies or CSRF tokens into a shared collection.
 variables:

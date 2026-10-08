@@ -1,0 +1,236 @@
+openapi: 3.0.0
+info:
+  title: COAD
+  version: 1.0.0
+  description: |-
+    Authorized QA verification of authorization fixes on the COAD DEV/UAT environment.
+
+    UA-02 — Advertiser self-approve campaign version (privilege escalation on status).
+    UA-06 — Member self-elevate role (vertical privilege escalation).
+    UA-07 — Delete membership of another group/org (IDOR / broken object-level auth).
+
+    HOW TO USE
+    1. Import this collection + the COAD DEV environment file.
+    2. Capture a valid request from the browser (DevTools > Network > Copy as cURL) and paste the real body/cookies. Only swap the field under test.
+    3. Fill the collection variables (ids) and the environment variables (session/CSRF) for the account + org you are testing.
+    4. Follow-redirects is DISABLED per request so Laravel 302/419/403/404 stays visible.
+    5. Confirm post-condition in UI or DB — never conclude from HTTP status alone.
+    6. On legacy (pre-fix) code UA-06/UA-07 really change data — undo role/membership after.
+
+    Do not commit session cookies or CSRF tokens into a shared collection.
+servers:
+  - url: '{{advertiser_base_url}}'
+  - url: '{{publisher_base_url}}'
+paths:
+  '/campaigns/{campaign_id}/versions/{version_id}':
+    post:
+      summary: TC02-02 Self approve (expect 422 after fix)
+      parameters:
+        - name: X-Requested-With
+          in: header
+          schema:
+            type: string
+          example: XMLHttpRequest
+        - name: X-XSRF-TOKEN
+          in: header
+          schema:
+            type: string
+          example: '{{xsrf_token}}'
+        - name: Cookie
+          in: header
+          schema:
+            type: string
+          example: 'X-Org={{x_org}}; XSRF-TOKEN={{xsrf_cookie}}; coad_session={{coad_session}}'
+      responses: {}
+      tags:
+        - UA-02 — Advertiser self-approve campaign version
+      description: 'Change only the top-level status (next to version_no). Do not touch campaign-creative[].status or organization.status. After fix: 422 + errors.status, campaign stays draft, no approval_date, no draft->approved history.'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                version_no:
+                  type: integer
+                status:
+                  type: string
+                ads_type:
+                  type: string
+            example:
+              version_no: 1
+              status: approved
+              ads_type: catfish
+    parameters:
+      - name: campaign_id
+        in: path
+        required: true
+        schema:
+          type: string
+        example: ''
+      - name: version_id
+        in: path
+        required: true
+        schema:
+          type: string
+        example: ''
+  '/iam/members/accounts/{self_account_id}/role-and-permission':
+    post:
+      summary: 'TC06-01 Member bumps own Supervisor (Member session, self id) → 403'
+      parameters:
+        - name: type
+          in: query
+          schema:
+            type: string
+          example: advertiser
+        - name: X-Requested-With
+          in: header
+          schema:
+            type: string
+          example: XMLHttpRequest
+        - name: X-XSRF-TOKEN
+          in: header
+          schema:
+            type: string
+          example: '{{xsrf_token}}'
+        - name: Cookie
+          in: header
+          schema:
+            type: string
+          example: 'X-Org={{x_org}}; XSRF-TOKEN={{xsrf_cookie}}; coad_session={{coad_session}}'
+      responses: {}
+      tags:
+        - UA-06 — Member self-elevate role
+      description: 'Load the MEMBER session cookies. Precondition: Internal Campaign Review = ON, member has >= UPDATE on Member Account/IAM. Owner first toggles Supervisor OFF. Send only the role under test. After fix: 403, Supervisor stays off.'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                roles:
+                  type: object
+                  properties:
+                    ADV.SUPERVISOR:
+                      type: object
+                      properties:
+                        label:
+                          type: string
+                        value:
+                          type: boolean
+                        description:
+                          type: string
+                        code:
+                          type: string
+            example:
+              roles:
+                ADV.SUPERVISOR:
+                  label: Supervisor
+                  value: true
+                  description: Can supervise and manage advertiser operations
+                  code: ADV.SUPERVISOR
+    parameters:
+      - name: self_account_id
+        in: path
+        required: true
+        schema:
+          type: string
+        example: ''
+  '/accounts/{self_account_id}/role-and-permission':
+    post:
+      summary: TC06-05b Publisher self-escalate — legacy route (Member session) → 403
+      parameters:
+        - name: type
+          in: query
+          schema:
+            type: string
+          example: publisher
+        - name: X-Requested-With
+          in: header
+          schema:
+            type: string
+          example: XMLHttpRequest
+        - name: X-XSRF-TOKEN
+          in: header
+          schema:
+            type: string
+          example: '{{xsrf_token}}'
+        - name: Cookie
+          in: header
+          schema:
+            type: string
+          example: 'X-Org={{x_org}}; XSRF-TOKEN={{xsrf_cookie}}; coad_session={{coad_session}}'
+      responses: {}
+      tags:
+        - UA-06 — Member self-elevate role
+      description: 'Legacy Publisher route. After fix: 403, PUB.SUPERVISOR unchanged.'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                roles:
+                  type: object
+                  properties:
+                    PUB.SUPERVISOR:
+                      type: object
+                      properties:
+                        label:
+                          type: string
+                        value:
+                          type: boolean
+                        description:
+                          type: string
+                        code:
+                          type: string
+            example:
+              roles:
+                PUB.SUPERVISOR:
+                  label: Supervisor
+                  value: true
+                  description: Supervisor
+                  code: PUB.SUPERVISOR
+    parameters:
+      - name: self_account_id
+        in: path
+        required: true
+        schema:
+          type: string
+        example: ''
+  '/iam/user-groups/{group_A_id}/members/{membership_B_id}':
+    delete:
+      summary: 'TC07-01 Cross-org delete (group A + membership B, session A) → 404'
+      parameters:
+        - name: X-Requested-With
+          in: header
+          schema:
+            type: string
+          example: XMLHttpRequest
+        - name: X-XSRF-TOKEN
+          in: header
+          schema:
+            type: string
+          example: '{{xsrf_token}}'
+        - name: Cookie
+          in: header
+          schema:
+            type: string
+          example: 'X-Org={{x_org}}; XSRF-TOKEN={{xsrf_cookie}}; coad_session={{coad_session}}'
+      responses: {}
+      tags:
+        - UA-07 — Cross-group / cross-org membership delete
+      description: 'membership_B_id = user_group_members.id (NOT member_id) of a victim in Org B. Session + X-Org = Org A. After fix: 404, Org B membership intact. On legacy code it deletes — re-add victim to group B afterward.'
+    parameters:
+      - name: group_A_id
+        in: path
+        required: true
+        schema:
+          type: string
+        example: ''
+      - name: membership_B_id
+        in: path
+        required: true
+        schema:
+          type: string
+        example: ''
