@@ -1,0 +1,255 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="ad.size" content="width=300,height=250">
+  <script>
+    window.clickTag = new URLSearchParams(location.search).get("clickTag");
+  </script>
+  <title>Sling Smash — Mini Game 300x250</title>
+  <style>
+    :root {
+      /* Re-skin tokens. Game-world colors live in main.js (PALETTE). */
+      --bg: #12301f;
+      --ink: #fffaf0;
+      --ink-dim: rgba(255, 244, 222, 0.78);
+      --edge: rgba(255, 176, 74, 0.6);
+      --accent: #ffc24a;
+      --cta-top: #ff8a2a;
+      --cta-mid: #ffd27a;
+      --cta-ink: #2a1200;
+      --veil: rgba(14, 34, 22, 0.72);
+      color-scheme: dark;
+      font-family: Arial, Helvetica, sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body {
+      width: 300px;
+      height: 250px;
+      margin: 0;
+      overflow: hidden;
+      background: var(--bg);
+    }
+
+    button { font: inherit; }
+
+    .ad {
+      position: relative;
+      isolation: isolate;
+      width: 300px;
+      height: 250px;
+      overflow: hidden;
+      border: 1px solid var(--edge);
+      color: var(--ink);
+      background: var(--bg);
+      outline: none;
+      user-select: none;
+      -webkit-user-select: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .ad.is-shake { animation: shake 360ms cubic-bezier(0.36, 0.07, 0.19, 0.97) both; }
+
+    .stage {
+      position: absolute;
+      z-index: 0;
+      inset: 0;
+      display: block;
+      width: 100%;
+      height: 100%;
+      touch-action: none;
+    }
+
+    /* --------------------------------------------------------------- HUD */
+
+    .hud {
+      position: absolute;
+      z-index: 2;
+      top: 0;
+      left: 0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      width: 100%;
+      height: 24px;
+      padding: 0 10px;
+      background: linear-gradient(180deg, rgba(18, 40, 26, 0.86), rgba(18, 40, 26, 0));
+      font-size: 10px;
+      font-weight: 900;
+      letter-spacing: 0.6px;
+      pointer-events: none;
+      transition: opacity 240ms ease;
+    }
+
+    .hud p { display: flex; align-items: center; gap: 5px; margin: 0; }
+    .hud span { color: var(--ink-dim); }
+    .hud b { font-size: 12px; }
+    .hud .brand { color: var(--accent); letter-spacing: 1.2px; }
+
+    [data-phase="intro"] .hud { opacity: 0; }
+
+    /* ---------------------------------------------------------- OVERLAYS */
+
+    .overlay {
+      position: absolute;
+      z-index: 5;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+      padding: 0 16px;
+      text-align: center;
+      background: radial-gradient(120% 90% at 50% 40%, rgba(14, 34, 22, 0.3), var(--veil));
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 280ms ease;
+    }
+
+    [data-phase="intro"] .intro,
+    [data-phase="end"] .end {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .eyebrow {
+      margin: 0;
+      color: var(--accent);
+      font-size: 10px;
+      font-weight: 900;
+      letter-spacing: 1.6px;
+      text-transform: uppercase;
+    }
+
+    .title {
+      margin: 0;
+      font-size: 26px;
+      font-weight: 900;
+      line-height: 0.95;
+      letter-spacing: -0.5px;
+      text-transform: uppercase;
+      text-shadow: 0 3px 0 rgba(60, 24, 0, 0.55), 0 0 18px rgba(255, 190, 90, 0.4);
+    }
+
+    .howto {
+      margin: 0 0 4px;
+      color: var(--ink-dim);
+      font-size: 11px;
+      font-weight: 700;
+    }
+
+    .play,
+    .cta {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      min-width: 168px;
+      height: 36px;
+      padding: 0 18px;
+      border: 1px solid rgba(255, 222, 160, 0.9);
+      border-radius: 18px;
+      color: var(--cta-ink);
+      background: linear-gradient(103deg, var(--cta-top), var(--cta-mid) 52%, var(--cta-top));
+      box-shadow: inset 0 1px rgba(255, 246, 222, 0.75), 0 8px 20px rgba(0, 0, 0, 0.45);
+      font-size: 13px;
+      font-weight: 900;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      cursor: pointer;
+    }
+
+    .play { animation: pulse 1400ms ease-in-out infinite; }
+    .play:hover, .cta:hover { filter: brightness(1.08); }
+    .play:active, .cta:active { filter: brightness(0.95); }
+    .cta b { font-size: 17px; line-height: 1; }
+
+    .link {
+      padding: 4px 8px;
+      border: 0;
+      color: var(--ink-dim);
+      background: none;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.6px;
+      text-transform: uppercase;
+      cursor: pointer;
+    }
+
+    .link:hover { color: var(--ink); }
+
+    .offer {
+      color: var(--accent);
+      font-size: 38px;
+      font-weight: 900;
+      line-height: 1;
+      letter-spacing: -1.5px;
+      text-shadow: 0 0 16px rgba(255, 170, 60, 0.5);
+    }
+
+    .end .title { font-size: 22px; }
+
+    .ad:focus-visible { box-shadow: inset 0 0 0 3px #ffd27a; }
+    button:focus-visible { outline: 2px solid #ffd27a; outline-offset: 2px; }
+
+    @keyframes pulse {
+      0%, 100% { transform: scale(1); }
+      50% { transform: scale(1.05); }
+    }
+
+    @keyframes shake {
+      10%, 90% { transform: translateX(-1px); }
+      20%, 80% { transform: translateX(2px); }
+      30%, 50%, 70% { transform: translateX(-3px); }
+      40%, 60% { transform: translateX(3px); }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .play, .ad.is-shake { animation: none; }
+      .overlay, .hud { transition: none; }
+    }
+  </style>
+</head>
+<body>
+  <main
+    id="ad"
+    class="ad"
+    data-click-url=""
+    data-phase="intro"
+    data-format="popup"
+    role="application"
+    tabindex="0"
+    aria-label="Sling Smash mini game. Play to unlock 20 percent off the Trekka T5 trail shoes"
+  >
+    <canvas id="stage" class="stage" aria-hidden="true"></canvas>
+
+    <div class="hud" aria-hidden="true">
+      <p><span>BOTS</span><b id="scoreValue">0</b><span id="goalValue">/ 3</span></p>
+      <p><span>TIME</span><b id="timeValue">45</b></p>
+      <p class="brand">TREKKA T5</p>
+    </div>
+
+    <section class="overlay intro">
+      <p class="eyebrow">Trekka T5 · Mini game</p>
+      <h1 class="title">Sling<br>Smash</h1>
+      <p class="howto">Pull back, let fly, pop all 3 bots</p>
+      <button class="play" id="playButton" type="button">Tap to play</button>
+      <button class="link" id="skipButton" type="button">Skip to offer ›</button>
+    </section>
+
+    <section class="overlay end" aria-live="polite">
+      <p class="eyebrow" id="endEyebrow">Score 0</p>
+      <h2 class="title" id="endTitle">You win!</h2>
+      <strong class="offer" id="offerValue">−20%</strong>
+      <button class="cta" id="ctaButton" type="button"><span>Claim offer</span><b>›</b></button>
+      <button class="link" id="replayButton" type="button">↻ Play again</button>
+    </section>
+  </main>
+
+  <script src="main.js"></script>
+</body>
+</html>
