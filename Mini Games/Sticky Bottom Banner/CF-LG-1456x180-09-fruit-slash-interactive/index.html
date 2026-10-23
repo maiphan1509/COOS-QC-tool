@@ -1,0 +1,435 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="ad.size" content="width=1456,height=180">
+  <script>
+    window.clickTag = new URLSearchParams(location.search).get("clickTag");
+  </script>
+  <title>Fruit Slash — Sticky Bottom 1456x180</title>
+  <style>
+    :root {
+      /* Re-skin tokens. Game-world colors live in main.js (PALETTE). */
+      --bg: #2b1609;
+      --ink: #fff8ec;
+      --ink-dim: rgba(255, 238, 214, 0.76);
+      --edge: rgba(255, 168, 82, 0.6);
+      --accent: #b8f25c;
+      --cta-top: #45b52a;
+      --cta-mid: #b8f25c;
+      --cta-ink: #0c2400;
+      --veil: rgba(32, 14, 4, 0.74);
+      color-scheme: dark;
+      font-family: Arial, Helvetica, sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body {
+      width: 300px;
+      height: 250px;
+      margin: 0;
+      overflow: hidden;
+      background: var(--bg);
+    }
+
+    button { font: inherit; }
+
+    .ad {
+      position: relative;
+      isolation: isolate;
+      width: 300px;
+      height: 250px;
+      overflow: hidden;
+      border: 1px solid var(--edge);
+      color: var(--ink);
+      background: var(--bg);
+      outline: none;
+      user-select: none;
+      -webkit-user-select: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .ad.is-shake { animation: shake 360ms cubic-bezier(0.36, 0.07, 0.19, 0.97) both; }
+
+    .stage {
+      position: absolute;
+      z-index: 0;
+      inset: 0;
+      display: block;
+      width: 100%;
+      height: 100%;
+      touch-action: none;
+    }
+
+    /* --------------------------------------------------------------- HUD */
+
+    .hud {
+      position: absolute;
+      z-index: 2;
+      top: 0;
+      left: 0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      width: 100%;
+      height: 24px;
+      padding: 0 10px;
+      background: linear-gradient(180deg, rgba(30, 12, 2, 0.88), rgba(30, 12, 2, 0));
+      font-size: 10px;
+      font-weight: 900;
+      letter-spacing: 0.6px;
+      pointer-events: none;
+      transition: opacity 240ms ease;
+    }
+
+    .hud p { display: flex; align-items: center; gap: 5px; margin: 0; }
+    .hud span { color: var(--ink-dim); }
+    .hud b { font-size: 12px; }
+    .hud .brand { color: var(--accent); letter-spacing: 1.2px; }
+
+    /* Strikes: an X lights up per missed fruit or sliced bomb. */
+    .strikes { gap: 3px; }
+    .strikes i {
+      position: relative;
+      display: block;
+      width: 11px;
+      height: 11px;
+      opacity: 0.35;
+      transition: opacity 160ms ease, transform 160ms ease;
+    }
+    .strikes i::before,
+    .strikes i::after {
+      content: "";
+      position: absolute;
+      top: -1px;
+      left: 4px;
+      width: 3px;
+      height: 13px;
+      border-radius: 2px;
+      background: var(--ink-dim);
+      transform: rotate(45deg);
+    }
+    .strikes i::after { transform: rotate(-45deg); }
+    .strikes i.on { opacity: 1; transform: scale(1.15); }
+    .strikes i.on::before,
+    .strikes i.on::after { background: #ff4436; box-shadow: 0 0 6px rgba(255, 68, 54, 0.8); }
+
+    /* Smaller marks where the HUD shares a narrow row or column. */
+    [data-format=rail] .strikes,
+    [data-format=strip] .strikes { gap: 2px; }
+    [data-format=rail] .strikes i,
+    [data-format=strip] .strikes i { width: 7px; height: 7px; }
+    [data-format=rail] .strikes i::before,
+    [data-format=rail] .strikes i::after,
+    [data-format=strip] .strikes i::before,
+    [data-format=strip] .strikes i::after { top: -1px; left: 2.4px; width: 2.2px; height: 9px; }
+
+    [data-phase="intro"] .hud { opacity: 0; }
+
+    /* ---------------------------------------------------------- OVERLAYS */
+
+    .overlay {
+      position: absolute;
+      z-index: 5;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+      padding: 0 16px;
+      text-align: center;
+      background: radial-gradient(120% 90% at 50% 40%, rgba(32, 14, 4, 0.3), var(--veil));
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 280ms ease;
+    }
+
+    [data-phase="intro"] .intro,
+    [data-phase="end"] .end {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .eyebrow {
+      margin: 0;
+      color: var(--accent);
+      font-size: 10px;
+      font-weight: 900;
+      letter-spacing: 1.6px;
+      text-transform: uppercase;
+    }
+
+    .title {
+      margin: 0;
+      font-size: 28px;
+      font-weight: 900;
+      line-height: 0.95;
+      letter-spacing: -0.5px;
+      text-transform: uppercase;
+      text-shadow: 0 3px 0 #c2281e, 0 5px 0 rgba(0, 0, 0, 0.45), 0 0 18px rgba(184, 242, 92, 0.4);
+    }
+
+    .howto {
+      margin: 0 0 4px;
+      color: var(--ink-dim);
+      font-size: 11px;
+      font-weight: 700;
+    }
+
+    .play,
+    .cta {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      min-width: 168px;
+      height: 36px;
+      padding: 0 18px;
+      border: 1px solid rgba(226, 255, 180, 0.9);
+      border-radius: 18px;
+      color: var(--cta-ink);
+      background: linear-gradient(103deg, var(--cta-top), var(--cta-mid) 52%, var(--cta-top));
+      box-shadow: inset 0 1px rgba(240, 255, 214, 0.75), 0 8px 20px rgba(0, 0, 0, 0.5);
+      font-size: 13px;
+      font-weight: 900;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      cursor: pointer;
+    }
+
+    .play { animation: pulse 1400ms ease-in-out infinite; }
+    .play:hover, .cta:hover { filter: brightness(1.08); }
+    .play:active, .cta:active { filter: brightness(0.95); }
+    .cta b { font-size: 17px; line-height: 1; }
+
+    .link {
+      padding: 4px 8px;
+      border: 0;
+      color: var(--ink-dim);
+      background: none;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.6px;
+      text-transform: uppercase;
+      cursor: pointer;
+    }
+
+    .link:hover { color: var(--ink); }
+
+    .offer {
+      color: var(--accent);
+      font-size: 38px;
+      font-weight: 900;
+      line-height: 1;
+      letter-spacing: -1.5px;
+      text-shadow: 0 0 16px rgba(184, 242, 92, 0.5);
+    }
+
+    .end .title { font-size: 22px; }
+
+    .ad:focus-visible { box-shadow: inset 0 0 0 3px var(--accent); }
+    button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+    @keyframes pulse {
+      0%, 100% { transform: scale(1); }
+      50% { transform: scale(1.05); }
+    }
+
+    @keyframes shake {
+      10%, 90% { transform: translateX(-1px); }
+      20%, 80% { transform: translateX(2px); }
+      30%, 50%, 70% { transform: translateX(-3px); }
+      40%, 60% { transform: translateX(3px); }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .play, .ad.is-shake { animation: none; }
+      .overlay, .hud, .strikes i { transition: none; }
+    }
+
+    /* ------------------------------------------------- FORMAT: CF-LG-1456x180 */
+    /* Authored at 1456x180, served at 430x53.1593: k = 3.386.
+       Laid out in served pixels and scaled up by k, so every value below is
+       the rendered size. */
+    .play-group {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 5px;
+    }
+
+    .credit {
+      margin: 0;
+      color: var(--ink-dim);
+      font-size: 8px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+      white-space: nowrap;
+    }
+
+    .credit strong { color: var(--ink); font-weight: 900; }
+
+    html, body { width: 1456px; height: 180px; }
+
+    .ad {
+      width: 430px;
+      height: 53.1593px;
+      scale: 3.386;
+      transform-origin: 0 0;
+    }
+
+    .stage { width: 100%; height: 100%; }
+
+    .hud {
+      flex-direction: column;
+      justify-content: center;
+      align-items: flex-start;
+      gap: 2px;
+      width: 66px;
+      height: 100%;
+      padding: 0 0 0 5px;
+      background: linear-gradient(90deg, rgba(4, 10, 22, 0.92), rgba(4, 10, 22, 0.78) 72%, rgba(4, 10, 22, 0));
+      font-size: 6.5px;
+      letter-spacing: 0.2px;
+    }
+
+    .hud p { gap: 2px; white-space: nowrap; }
+    .hud b { font-size: 9px; }
+    .hud .brand { order: -1; font-size: 6.5px; letter-spacing: 0.5px; }
+
+    [data-phase="end"] .hud { opacity: 0; }
+
+    .overlay {
+      display: grid;
+      grid-auto-flow: column;
+      grid-template-rows: auto auto;
+      align-content: center;
+      justify-content: center;
+      align-items: center;
+      column-gap: 14px;
+      row-gap: 2px;
+      padding: 0 12px;
+      background: linear-gradient(var(--veil), var(--veil)), linear-gradient(var(--veil), var(--veil));
+    }
+
+    .eyebrow { grid-column: 1; grid-row: 1; align-self: end; font-size: 6.5px; letter-spacing: 1px; white-space: nowrap; }
+
+    .title,
+    .end .title {
+      grid-column: 1;
+      grid-row: 2;
+      align-self: start;
+      font-size: 15px;
+      line-height: 1;
+      white-space: nowrap;
+    }
+
+    .title br { display: none; }
+
+    .howto {
+      grid-column: 2;
+      grid-row: 1 / span 2;
+      max-width: 120px;
+      margin: 0;
+      font-size: 7.5px;
+      line-height: 1.3;
+      text-align: left;
+    }
+
+    .offer { grid-column: 2; grid-row: 1 / span 2; font-size: 26px; letter-spacing: -1px; }
+
+    .play,
+    .cta {
+      grid-column: 3;
+      grid-row: 1 / span 2;
+      min-width: 96px;
+      height: 28px;
+      padding: 0 12px;
+      gap: 6px;
+      border-radius: 14px;
+      font-size: 10px;
+      white-space: nowrap;
+    }
+
+    .cta b { font-size: 13px; }
+    .link { grid-column: 4; grid-row: 1 / span 2; font-size: 7px; white-space: nowrap; }
+
+    .play-group { grid-column: 3; grid-row: 1 / span 2; gap: 2px; }
+    .credit { font-size: 6.5px; letter-spacing: 0.2px; }
+
+    .close {
+      position: absolute;
+      z-index: 9;
+      top: 3px;
+      right: 3px;
+      width: 14px;
+      height: 14px;
+      padding: 0;
+      border: 1px solid rgba(255, 255, 255, 0.4);
+      border-radius: 50%;
+      background: rgba(4, 7, 15, 0.78);
+      cursor: pointer;
+    }
+
+    .close::before,
+    .close::after {
+      content: "";
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: 7px;
+      height: 1.2px;
+      background: #ffffff;
+      transform: translate(-50%, -50%) rotate(45deg);
+    }
+
+    .close::after { transform: translate(-50%, -50%) rotate(-45deg); }
+  </style>
+</head>
+<body>
+  <main
+    id="ad"
+    class="ad"
+    data-click-url=""
+    data-phase="intro"
+    data-format="strip"
+    role="application"
+    tabindex="0"
+    aria-label="Fruit Slash mini game. Play to unlock 25 percent off the Blendr Go portable blender"
+  >
+    <canvas id="stage" class="stage" aria-hidden="true"></canvas>
+
+    <div class="hud" aria-hidden="true">
+      <p><span>SCORE</span><b id="scoreValue">0</b><span id="goalValue">/ 250</span></p>
+      <p><span>TIME</span><b id="timeValue">40</b></p>
+      <p class="strikes" id="strikesValue"><i></i><i></i><i></i></p>
+      <p class="brand">BLENDR GO</p>
+    </div>
+
+    <section class="overlay intro">
+      <p class="eyebrow">Blendr Go · Mini game</p>
+      <h1 class="title">Fruit <br>Slash</h1>
+      <p class="howto">Swipe fruit · avoid bombs · 250 wins</p>
+      <div class="play-group">
+        <button class="play" id="playButton" type="button">Tap to play</button>
+        <p class="credit">Developed by <strong>Thanh Mai</strong></p>
+      </div>
+      <button class="link" id="skipButton" type="button">Skip to offer ›</button>
+    </section>
+
+    <section class="overlay end" aria-live="polite">
+      <p class="eyebrow" id="endEyebrow">Score 0</p>
+      <h2 class="title" id="endTitle">You win!</h2>
+      <strong class="offer" id="offerValue">−25%</strong>
+      <button class="cta" id="ctaButton" type="button"><span>Claim offer</span><b>›</b></button>
+      <button class="link" id="replayButton" type="button">↻ Play again</button>
+    </section>
+    <button class="close" id="closeButton" type="button" aria-label="Close ad"></button>
+  </main>
+
+  <script src="main.js"></script>
+</body>
+</html>

@@ -1,0 +1,376 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mini Games Gallery</title>
+  <style>
+    :root {
+      --bg: #070b14;
+      --panel: #0f1626;
+      --panel-2: #141d31;
+      --line: rgba(120, 160, 230, 0.18);
+      --ink: #e8efff;
+      --dim: rgba(200, 215, 245, 0.62);
+      --accent: #ffd23f;
+      --ok: #4cd964;
+      --bad: #ff6b6b;
+      color-scheme: dark;
+      font-family: Arial, Helvetica, sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      padding: 24px 16px 48px;
+      color: var(--ink);
+      background: var(--bg);
+    }
+
+    .wrap { max-width: 1500px; margin: 0 auto; }
+
+    h1 { margin: 0 0 6px; font-size: 22px; letter-spacing: -0.3px; }
+
+    .lede {
+      margin: 0 0 14px;
+      color: var(--dim);
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    code { color: var(--ink); }
+
+    .bar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+      margin-bottom: 10px;
+    }
+
+    .bar > span {
+      min-width: 70px;
+      color: var(--dim);
+      font-size: 12px;
+    }
+
+    .chip,
+    button,
+    .button {
+      padding: 6px 10px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      color: var(--ink);
+      background: var(--panel);
+      font: inherit;
+      font-size: 12px;
+      text-decoration: none;
+      cursor: pointer;
+    }
+
+    .chip[aria-pressed="true"] {
+      border-color: var(--accent);
+      color: #1a1203;
+      background: var(--accent);
+      font-weight: 700;
+    }
+
+    button:hover, .button:hover, .chip:hover { border-color: rgba(255, 210, 63, 0.6); }
+
+    input[type="text"] {
+      width: 280px;
+      max-width: 100%;
+      padding: 6px 8px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      color: var(--ink);
+      background: var(--panel);
+      font: inherit;
+      font-size: 12px;
+    }
+
+    .grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 16px;
+      align-items: flex-start;
+      margin-top: 16px;
+    }
+
+    .card {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      max-width: 100%;
+      padding: 12px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: var(--panel);
+    }
+
+    .frame {
+      position: relative;
+      max-width: 100%;
+      overflow: hidden;
+      background: #000;
+    }
+
+    .frame iframe {
+      position: absolute;
+      top: 0;
+      left: 0;
+      border: 0;
+      transform-origin: 0 0;
+    }
+
+    .meta {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .meta h2 { margin: 0; font-size: 14px; }
+    .meta span { color: var(--dim); font-size: 11px; white-space: nowrap; }
+
+    .actions { display: flex; flex-wrap: wrap; gap: 6px; }
+
+    .log {
+      min-height: 15px;
+      margin: 0;
+      color: var(--dim);
+      font-family: Menlo, Consolas, monospace;
+      font-size: 11px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .log .win { color: var(--ok); }
+    .log .lose { color: var(--bad); }
+    .log .click { color: var(--accent); }
+
+    .empty { color: var(--dim); font-size: 13px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Mini Games — Playable Ads</h1>
+    <p class="lede">
+      Every game ships in the same 4 formats as the samples: <code>PB-SM-300x250</code> (popup), <code>SR-LG-200x480</code> (side rail, shown at 100x240 on mobile),
+      <code>BT-LG-1456x180</code> (premium top banner) and <code>CF-LG-1456x180</code> (sticky bottom banner, with a close button), both shown at 430x53 on mobile.
+      Each folder holds only <code>index.html</code> + <code>main.js</code>, with its zip alongside. The line under each creative shows its latest event: <code>start / end / click / close</code>.
+    </p>
+
+    <div class="bar" id="viewBar"><span>View by</span></div>
+    <div class="bar" id="pickBar"><span id="pickLabel">Pick</span></div>
+    <div class="bar" id="zoomBar"><span>Size</span></div>
+    <div class="bar">
+      <span>clickTag</span>
+      <input id="clickTagInput" type="text" value="https://example.com/landing">
+      <button id="reloadAll" type="button">Reload all</button>
+    </div>
+
+    <main class="grid" id="grid"></main>
+  </div>
+
+  <script src="_tools/manifest.js"></script>
+  <script>
+    (() => {
+      "use strict";
+
+      const GAMES = window.MINI_GAMES || [];
+      const FORMAT_CODES = ["PB-SM-300x250", "SR-LG-200x480", "BT-LG-1456x180", "CF-LG-1456x180"];
+      const ZOOMS = [
+        { id: "served", label: "Served (mobile)", scale: (f) => 1 / f.k },
+        { id: "served2", label: "Served ×2", scale: (f) => 2 / f.k },
+        { id: "authored", label: "Authored (ad.size)", scale: () => 1 }
+      ];
+
+      const grid = document.getElementById("grid");
+      const clickTagInput = document.getElementById("clickTagInput");
+      const state = { view: "game", pick: "", zoom: "served2" };
+      const frames = [];
+
+      const readHash = () => {
+        const params = new URLSearchParams(location.hash.slice(1));
+        state.view = params.get("view") === "format" ? "format" : "game";
+        state.pick = params.get("pick") || "";
+        state.zoom = ZOOMS.some((z) => z.id === params.get("zoom")) ? params.get("zoom") : "served2";
+      };
+
+      const writeHash = () => {
+        history.replaceState(null, "", `#view=${state.view}&pick=${encodeURIComponent(state.pick)}&zoom=${state.zoom}`);
+      };
+
+      const chip = (label, pressed, onClick) => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "chip";
+        button.textContent = label;
+        button.setAttribute("aria-pressed", String(pressed));
+        button.addEventListener("click", onClick);
+        return button;
+      };
+
+      const fillBar = (id, items) => {
+        const bar = document.getElementById(id);
+        bar.querySelectorAll(".chip").forEach((node) => node.remove());
+        items.forEach((node) => bar.appendChild(node));
+      };
+
+      const srcFor = (format) => {
+        const tag = clickTagInput.value.trim();
+        const path = format.path.split("/").map(encodeURIComponent).join("/");
+        return `${path}${tag ? `?clickTag=${encodeURIComponent(tag)}` : ""}`;
+      };
+
+      // Every creative names its own api; find whichever mg* handle it set.
+      const apiOf = (iframe) => {
+        const win = iframe.contentWindow;
+        if (!win) {
+          return null;
+        }
+        const key = Object.keys(win).find((name) => /^mg[A-Z]/.test(name) && win[name] && typeof win[name].start === "function");
+        return key ? win[key] : null;
+      };
+
+      // Same-origin frames: tap every namespaced "<prefix>:<event>" the ad emits.
+      const wire = (iframe, log) => {
+        iframe.addEventListener("load", () => {
+          const ad = iframe.contentDocument && iframe.contentDocument.getElementById("ad");
+          if (!ad) {
+            log.textContent = "#ad not found";
+            return;
+          }
+          log.textContent = "ready";
+          const dispatch = ad.dispatchEvent.bind(ad);
+          ad.dispatchEvent = (event) => {
+            const name = event.type.split(":")[1];
+            if (name) {
+              const detail = event.detail || {};
+              const span = document.createElement("span");
+              span.className = name === "end" ? (detail.won ? "win" : "lose") : name === "click" ? "click" : "";
+              span.textContent = name === "end"
+                ? `${detail.won ? "WIN" : "LOSE"} score=${detail.score} ${Math.round((detail.ms || 0) / 100) / 10}s`
+                : name === "click" ? `click ${detail.source || ""} → ${detail.clickUrl || "(no url)"}` : name;
+              log.replaceChildren(span);
+            }
+            return dispatch(event);
+          };
+        });
+      };
+
+      const card = (game, format, heading) => {
+        const zoom = ZOOMS.find((z) => z.id === state.zoom);
+        const scale = zoom.scale(format);
+        const node = document.createElement("article");
+        node.className = "card";
+        const frame = document.createElement("div");
+        frame.className = "frame";
+        frame.style.width = `${format.w * scale}px`;
+        frame.style.height = `${format.h * scale}px`;
+        const iframe = document.createElement("iframe");
+        iframe.title = `${game.title} ${format.code}`;
+        iframe.loading = "lazy";
+        iframe.scrolling = "no";
+        iframe.width = format.w;
+        iframe.height = format.h;
+        iframe.style.transform = `scale(${scale})`;
+        frame.appendChild(iframe);
+
+        const meta = document.createElement("div");
+        meta.className = "meta";
+        const title = document.createElement("h2");
+        title.textContent = heading;
+        const size = document.createElement("span");
+        size.textContent = `${(format.bytes / 1024).toFixed(1)} KB · zip ${(format.zipBytes / 1024).toFixed(1)} KB`;
+        meta.append(title, size);
+
+        const actions = document.createElement("div");
+        actions.className = "actions";
+        const log = document.createElement("p");
+        log.className = "log";
+        log.textContent = "—";
+        [["Start", () => apiOf(iframe) && apiOf(iframe).start()],
+          ["Force win", () => { const api = apiOf(iframe); if (api) { api.start(); api.end(true); } }],
+          ["Reload", () => { iframe.src = srcFor(format); }]].forEach(([label, run]) => {
+          const button = document.createElement("button");
+          button.type = "button";
+          button.textContent = label;
+          button.addEventListener("click", run);
+          actions.appendChild(button);
+        });
+        const open = document.createElement("a");
+        open.className = "button";
+        open.href = srcFor(format);
+        open.target = "_blank";
+        open.rel = "noopener";
+        open.textContent = "Open ↗";
+        const zip = document.createElement("a");
+        zip.className = "button";
+        zip.href = format.path.replace(/\/index\.html$/, ".zip").split("/").map(encodeURIComponent).join("/");
+        zip.textContent = "Zip ↓";
+        actions.append(open, zip);
+
+        wire(iframe, log);
+        iframe.src = srcFor(format);
+        frames.push({ iframe, format });
+        node.append(frame, meta, actions, log);
+        return node;
+      };
+
+      const render = () => {
+        writeHash();
+        frames.length = 0;
+        grid.replaceChildren();
+
+        fillBar("viewBar", [
+          chip("Game", state.view === "game", () => { state.view = "game"; state.pick = ""; render(); }),
+          chip("Format", state.view === "format", () => { state.view = "format"; state.pick = ""; render(); })
+        ]);
+        fillBar("zoomBar", ZOOMS.map((zoom) => chip(zoom.label, state.zoom === zoom.id, () => { state.zoom = zoom.id; render(); })));
+
+        if (!GAMES.length) {
+          grid.innerHTML = '<p class="empty">No manifest yet — run <code>python3 "Mini Games/_tools/build.py"</code>.</p>';
+          return;
+        }
+
+        if (state.view === "game") {
+          if (!GAMES.some((game) => game.slug === state.pick)) {
+            state.pick = GAMES[0].slug;
+            writeHash();
+          }
+          document.getElementById("pickLabel").textContent = "Game";
+          fillBar("pickBar", GAMES.map((game) => chip(`${game.number} ${game.title}`, game.slug === state.pick, () => { state.pick = game.slug; render(); })));
+          const game = GAMES.find((item) => item.slug === state.pick);
+          game.formats.forEach((format) => grid.appendChild(card(game, format, `${format.code} · ${format.label}`)));
+        } else {
+          if (!FORMAT_CODES.includes(state.pick)) {
+            state.pick = FORMAT_CODES[0];
+            writeHash();
+          }
+          document.getElementById("pickLabel").textContent = "Format";
+          fillBar("pickBar", FORMAT_CODES.map((code) => chip(code, code === state.pick, () => { state.pick = code; render(); })));
+          GAMES.forEach((game) => {
+            const format = game.formats.find((item) => item.code === state.pick);
+            if (format) {
+              grid.appendChild(card(game, format, `${game.number} · ${game.title} — ${game.genre}`));
+            }
+          });
+        }
+      };
+
+      document.getElementById("reloadAll").addEventListener("click", () => {
+        frames.forEach(({ iframe, format }) => {
+          iframe.src = srcFor(format);
+        });
+      });
+
+      readHash();
+      render();
+    })();
+  </script>
+</body>
+</html>
