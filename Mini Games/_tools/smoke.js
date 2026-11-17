@@ -1,5 +1,5 @@
 // Headless smoke test for a Mini Games creative.
-// usage: node "Mini Games/_tools/smoke.js" "<game folder>" [seconds=60] [popup|rail|strip|strip-close]
+// usage: node "Mini Games/_tools/smoke.js" "<game folder>" [seconds=60] [popup|rail|strip|strip-close][@<w>x<h>]
 // Stubs DOM + canvas, boots main.js, plays with random pointer/keyboard input
 // at 60fps on a fake clock, and fails on any thrown error, NaN draw args or
 // negative arc radius (which throws IndexSizeError in real browsers).
@@ -109,9 +109,14 @@ for (const match of html.matchAll(/<(\w+)\s([^>]*?)\bid="([^"]+)"([^>]*)>/g)) {
   }
   elements[match[3]] = el;
 }
+// An IAB layout rides on the format: strip@320x100 lays the strip out at
+// 320x100, like a built creative's data-layout.
 if (formatArg) {
-  elements.ad.dataset.format = formatArg.replace("-close", "");
-  if (formatArg.endsWith("-close") && !elements.closeButton) elements.closeButton = makeEl("closeButton", "button");
+  const [family, layout] = formatArg.split("@");
+  elements.ad.dataset.format = family.replace("-close", "");
+  if (layout) elements.ad.dataset.layout = layout;
+  else delete elements.ad.dataset.layout;
+  if (family.endsWith("-close") && !elements.closeButton) elements.closeButton = makeEl("closeButton", "button");
 }
 const ad = elements.ad;
 const canvas = elements.stage;

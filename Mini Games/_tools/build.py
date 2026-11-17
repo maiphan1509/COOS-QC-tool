@@ -1,4 +1,4 @@
-"""Build every Mini Games source into the four ad formats and zip them.
+"""Build every Mini Games source into every ad format and zip them.
 
 usage: python3 "Mini Games/_tools/build.py" [slug-filter]
 
@@ -10,8 +10,15 @@ popup 300x250 layout). Each source becomes, like the sample creatives:
   Premium Top Banner/BT-LG-1456x180-<nn>-<slug>-interactive/ (+ .zip)
   Sticky Bottom Banner/CF-LG-1456x180-<nn>-<slug>-interactive/ (+ .zip)
 
+plus one folder per IAB size (Medium Rectangle MR-300x250, Half Page
+HP-300x600, Square SQ-300x300, Small Square SS-200x200, Large Rectangle
+LR-336x280, Leaderboard LB-728x90, Billboard BB-970x250, Mobile Leaderboard
+ML-320x50, Large Mobile Banner LM-320x100).
+
 main.js is shared: it reads data-format from #ad and lays itself out for
-popup (300x250), rail (served 100x240) or strip (served 430x53).
+popup (300x250), rail (served 100x240) or strip (served 430x53). An IAB size
+reuses the family closest to its shape at its own layout size (sw x sh),
+written on #ad as data-layout + data-k, and the page scales it by k = w / sw.
 """
 
 import json
@@ -24,16 +31,55 @@ import sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SRC = os.path.join(ROOT, "_src")
 
+STRIP_H = 180 * 430 / 1456   # layout height of every strip that keeps the 1456x180 shape
+
+# w x h is the ad.size (the upload size). sw x sh is the layout size: the
+# served pixels main.js lays the game out in; the page scales it by k = w / sw.
+# dw x dh is the size people see: the mobile served size for the sample
+# formats, the upload size itself for the IAB sizes.
 FORMATS = [
     {"folder": "Popup Banner", "code": "PB-SM-300x250", "format": "popup", "label": "Popup",
-     "w": 300, "h": 250, "sw": 300, "sh": 250, "k": 1},
+     "w": 300, "h": 250, "sw": 300, "sh": 250, "dw": 300, "dh": 250},
     {"folder": "Side Rail", "code": "SR-LG-200x480", "format": "rail", "label": "Side Rail",
-     "w": 200, "h": 480, "sw": 100, "sh": 240, "k": 2},
+     "w": 200, "h": 480, "sw": 100, "sh": 240, "dw": 100, "dh": 240},
     {"folder": "Premium Top Banner", "code": "BT-LG-1456x180", "format": "strip", "label": "Top Banner",
-     "w": 1456, "h": 180, "sw": 430, "sh": 180 * 430 / 1456, "k": 1456 / 430},
+     "w": 1456, "h": 180, "sw": 430, "sh": STRIP_H, "dw": 430, "dh": STRIP_H},
     {"folder": "Sticky Bottom Banner", "code": "CF-LG-1456x180", "format": "strip", "label": "Sticky Bottom",
-     "w": 1456, "h": 180, "sw": 430, "sh": 180 * 430 / 1456, "k": 1456 / 430, "closable": True},
+     "w": 1456, "h": 180, "sw": 430, "sh": STRIP_H, "dw": 430, "dh": STRIP_H, "closable": True},
+    # IAB sizes, shown at their upload size. Each reuses the family closest
+    # to its shape; the layout keeps that family's height (popup, strip) or
+    # width (rail) where the shape allows, so per-format tuning carries over.
+    {"folder": "Medium Rectangle", "code": "MR-300x250", "format": "popup", "label": "Medium Rectangle",
+     "w": 300, "h": 250, "sw": 300, "sh": 250},
+    {"folder": "Half Page", "code": "HP-300x600", "format": "rail", "label": "Half Page",
+     "w": 300, "h": 600, "sw": 120, "sh": 240},
+    {"folder": "Square", "code": "SQ-300x300", "format": "popup", "label": "Square",
+     "w": 300, "h": 300, "sw": 300, "sh": 300},
+    {"folder": "Small Square", "code": "SS-200x200", "format": "popup", "label": "Small Square",
+     "w": 200, "h": 200, "sw": 300, "sh": 300},
+    {"folder": "Large Rectangle", "code": "LR-336x280", "format": "popup", "label": "Large Rectangle",
+     "w": 336, "h": 280, "sw": 300, "sh": 250},
+    {"folder": "Leaderboard", "code": "LB-728x90", "format": "strip", "label": "Leaderboard",
+     "w": 728, "h": 90, "sw": 430, "sh": STRIP_H},
+    {"folder": "Billboard", "code": "BB-970x250", "format": "strip", "label": "Billboard",
+     "w": 970, "h": 250, "sw": 388, "sh": 100},
+    {"folder": "Mobile Leaderboard", "code": "ML-320x50", "format": "strip", "label": "Mobile Leaderboard",
+     "w": 320, "h": 50, "sw": 320 * STRIP_H / 50, "sh": STRIP_H},
+    {"folder": "Large Mobile Banner", "code": "LM-320x100", "format": "strip", "label": "Large Mobile Banner",
+     "w": 320, "h": 100, "sw": 320, "sh": 100},
 ]
+
+# Layout size and scale each family's main.js assumes when #ad carries no
+# data-layout / data-k (the FORMATS table at the top of every main.js).
+NATIVE = {"popup": (300, 250, 1), "rail": (100, 240, 2), "strip": (430, STRIP_H, 1456 / 430)}
+
+for _fmt in FORMATS:
+    _fmt["k"] = _fmt["w"] / _fmt["sw"]
+    assert abs(_fmt["h"] / _fmt["sh"] - _fmt["k"]) < 1e-9, f"{_fmt['code']}: layout shape differs from ad.size"
+    _fmt.setdefault("dw", _fmt["w"])
+    _fmt.setdefault("dh", _fmt["h"])
+    _native = NATIVE[_fmt["format"]]
+    _fmt["custom"] = any(abs(a - b) > 1e-6 for a, b in zip((_fmt["sw"], _fmt["sh"], _fmt["k"]), _native))
 
 GENRES = {
     "hen-raiders": "Chicken-fleet space shooter",
@@ -247,6 +293,69 @@ CREDIT_CSS = {
 }
 
 
+# Strip layouts other than the 430-wide, 53-tall one. Appended after
+# STRIP_CSS and the strip credit rules, so equal selectors win.
+
+# Mobile Leaderboard (340x53): no room for a how-to column, so the eyebrow
+# goes and the how-to tucks under the title.
+NARROW_STRIP_CSS = """
+    .overlay { column-gap: 8px; padding: 0 8px; }
+    .intro .eyebrow { display: none; }
+    .intro .title { grid-row: 1; align-self: end; font-size: 13px; }
+    .howto { grid-column: 1; grid-row: 2; align-self: start; max-width: 150px; font-size: 6.5px; line-height: 1.25; }
+    .play-group { grid-column: 2; }
+    .intro .link { grid-column: 3; }
+    .end .title { font-size: 13px; }
+    .offer { font-size: 22px; }
+    .play,
+    .cta { min-width: 84px; padding: 0 8px; }
+
+    /* End card: Play again sits under the CTA instead of in a fourth column. */
+    .end .cta { grid-row: 1; align-self: end; height: 24px; }
+    .end .link { grid-column: 3; grid-row: 2; align-self: start; justify-self: center; padding: 1px 4px; }
+"""
+
+# Billboard (388x100) and Large Mobile Banner (320x100): twice the strip's
+# height, so the panels stack into two columns of three rows.
+TALL_STRIP_CSS = """
+    .hud { gap: 5px; }
+
+    .overlay {
+      grid-auto-flow: row;
+      grid-template-rows: auto auto auto;
+      column-gap: 18px;
+      row-gap: 4px;
+      padding: 0 10px;
+    }
+
+    .eyebrow { grid-column: 1; grid-row: 1; font-size: 7.5px; }
+
+    .title,
+    .end .title {
+      grid-column: 1;
+      grid-row: 2;
+      font-size: 19px;
+      line-height: 0.95;
+      white-space: normal;
+    }
+
+    .title br { display: inline; }
+    .end .title { font-size: 17px; white-space: nowrap; }
+
+    .howto { grid-column: 1; grid-row: 3; align-self: start; max-width: 160px; font-size: 8.5px; }
+    .offer { grid-column: 1; grid-row: 3; align-self: start; font-size: 28px; }
+
+    .play-group,
+    .cta { grid-column: 2; grid-row: 1 / span 2; align-self: end; }
+
+    .play,
+    .cta { min-width: 104px; height: 32px; border-radius: 16px; font-size: 11px; }
+
+    .link { grid-column: 2; grid-row: 3; justify-self: center; align-self: start; font-size: 7.5px; }
+    .credit { font-size: 7px; }
+"""
+
+
 def num(value):
     return f"{value:.4f}".rstrip("0").rstrip(".")
 
@@ -257,7 +366,7 @@ def format_css(fmt):
     /* Authored at {fmt['w']}x{fmt['h']}, served at {num(fmt['sw'])}x{num(fmt['sh'])}: k = {num(fmt['k'])}.
        Laid out in served pixels and scaled up by k, so every value below is
        the rendered size. */""" + CREDIT_CSS["popup"]
-    if fmt["format"] == "popup":
+    if fmt["format"] == "popup" and not fmt["custom"]:
         return head
     css = head + f"""
     html, body {{ width: {fmt['w']}px; height: {fmt['h']}px; }}
@@ -271,8 +380,14 @@ def format_css(fmt):
 
     .stage {{ width: 100%; height: 100%; }}
 """
+    if fmt["format"] == "popup":
+        return css
     css += RAIL_CSS if fmt["format"] == "rail" else STRIP_CSS
     css += CREDIT_CSS[fmt["format"]]
+    if fmt["format"] == "strip" and fmt["sh"] >= 80:
+        css += TALL_STRIP_CSS
+    elif fmt["format"] == "strip" and fmt["sw"] < 400:
+        css += NARROW_STRIP_CSS
     if fmt.get("closable"):
         css += CLOSE_CSS
     return css
@@ -293,6 +408,11 @@ def build_html(source, fmt, title):
         new_tag = re.sub(r'(\sdata-format=")[^"]*"', lambda m: f'{m.group(1)}{fmt["format"]}"', tag, count=1)
     else:
         new_tag = tag.replace("<main", f'<main data-format="{fmt["format"]}"', 1)
+    new_tag = re.sub(r'\sdata-(?:layout|k)="[^"]*"', "", new_tag)
+    if fmt["custom"]:
+        new_tag = re.sub(r'(\sdata-format="[^"]*")',
+                         lambda m: f'{m.group(1)}\n    data-layout="{num(fmt["sw"])}x{num(fmt["sh"])}"\n    data-k="{num(fmt["k"])}"',
+                         new_tag, count=1)
     html = html[:ad_tag.start()] + new_tag + html[ad_tag.end():]
     html = re.sub(r"(?<! )<br>", " <br>", html)
     # Designer credit sits right under the Tap to play button; the pair is one
@@ -344,6 +464,8 @@ def main():
                 "code": fmt["code"], "label": fmt["label"], "format": fmt["format"],
                 "path": f"{fmt['folder']}/{name}/index.html",
                 "w": fmt["w"], "h": fmt["h"], "k": fmt["k"],
+                "sw": round(fmt["sw"], 4), "sh": round(fmt["sh"], 4),
+                "dw": round(fmt["dw"], 4), "dh": round(fmt["dh"], 4),
                 "bytes": folder_bytes, "zipBytes": os.path.getsize(zip_path)
             })
         manifest.append(entry)

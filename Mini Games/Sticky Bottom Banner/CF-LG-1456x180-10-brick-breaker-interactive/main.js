@@ -70,10 +70,17 @@
   };
 
   const FORMAT = FORMATS[ad.dataset.format] ? ad.dataset.format : "popup";
-  const WIDTH = FORMATS[FORMAT].width;
-  const HEIGHT = FORMATS[FORMAT].height;
-  const K = FORMATS[FORMAT].k;
+  // The IAB sizes (Square, Half Page, Billboard...) reuse one of the three
+  // families at another layout size: build.py writes it on #ad as
+  // data-layout="<width>x<height>" plus data-k. SAFE stretches with it, so
+  // lay the game out from WIDTH / HEIGHT / SAFE rather than fixed numbers.
+  const AD_LAYOUT = String(ad.dataset.layout || "").split("x").map(Number);
+  const WIDTH = AD_LAYOUT[0] > 0 ? AD_LAYOUT[0] : FORMATS[FORMAT].width;
+  const HEIGHT = AD_LAYOUT[1] > 0 ? AD_LAYOUT[1] : FORMATS[FORMAT].height;
+  const K = Number(ad.dataset.k) > 0 ? Number(ad.dataset.k) : FORMATS[FORMAT].k;
   const SAFE = { ...FORMATS[FORMAT].safe };
+  SAFE.w = WIDTH - SAFE.x;
+  SAFE.h = HEIGHT - SAFE.y;
 
   // The sticky-bottom variant keeps its close button clear of play.
   if (closeButton) {
@@ -247,6 +254,45 @@
       dragGain: 1.3, keySpeed: 110, hint: 7, hintGap: 40, horizon: 0.5
     }
   }[FORMAT];
+
+  // IAB layouts that reshape the board. The native sizes (300x250, 100x240,
+  // 430x53) skip every branch below and keep the table above as is.
+  if (FORMAT === "popup" && HEIGHT >= 280) {
+    // Square 300x300: a sixth row of bricks and the wall set a little lower,
+    // so the open court keeps the popup's share of the board.
+    // The longer court costs rally time, so the ball is a touch quicker
+    // (it still has more room to read than on 300x250).
+    LAYOUT.brickTop = 22;
+    LAYOUT.rows = LAYOUT.rows.concat(["NNNNNNNN"]);
+    LAYOUT.speed = 200;
+    LAYOUT.speedMax = 260;
+  } else if (FORMAT === "rail" && WIDTH >= 115) {
+    // Half page 120x240: a sixth column across the wider rail and a paddle
+    // that grows with it.
+    Object.assign(LAYOUT, {
+      rows: ["TSNNST", "NTNNTN", "NNTTNN", "NNNNNN", "NNNNNN"],
+      paddleW: 32, wideW: 48, speed: 148, speedMax: 195
+    });
+  } else if (FORMAT === "strip" && HEIGHT < 80 && WIDTH < 400) {
+    // Mobile leaderboard 340x53: 90 px less court, so shallower bricks keep
+    // the run-up to the wall close to the native strip's.
+    Object.assign(LAYOUT, { brickH: 16, speed: 165, speedMax: 215 });
+  } else if (FORMAT === "strip" && HEIGHT >= 80) {
+    // Billboard 388x100 / large mobile banner 320x100: twice the strip's
+    // height, so six rows of full-size bricks across it and a rail-sized
+    // paddle and ball. The shorter 320 court gets shallower bricks and a
+    // slower ball; rail points, so the goal is about three rows deep.
+    const long = WIDTH >= 360;
+    Object.assign(LAYOUT, {
+      brickW: 14, brickH: long ? 22 : 18, gap: 2, brickTop: 6, ceiling: 2,
+      rows: ["TSNNST", "NTNNTN", "NNTTNN", "NNNNNN", "NNNNNN"],
+      points: { N: 15, T: 30, S: 60 },
+      paddleGap: 14, paddleW: 30, wideW: 44, paddleH: 6, ballR: 3.4,
+      speed: long ? 180 : 160, speedMax: long ? 230 : 205, speedup: 1.6,
+      powerW: 20, powerH: 9, powerFall: 62,
+      dragGain: 1.2, keySpeed: 150, hint: 9, hintGap: 52, horizon: 0.5
+    });
+  }
 
   const PADDLE_V = FIELD_H - LAYOUT.paddleGap;
   const BALL_R = LAYOUT.ballR;

@@ -68,10 +68,17 @@
   };
 
   const FORMAT = FORMATS[ad.dataset.format] ? ad.dataset.format : "popup";
-  const WIDTH = FORMATS[FORMAT].width;
-  const HEIGHT = FORMATS[FORMAT].height;
-  const K = FORMATS[FORMAT].k;
+  // The IAB sizes (Square, Half Page, Billboard...) reuse one of the three
+  // families at another layout size: build.py writes it on #ad as
+  // data-layout="<width>x<height>" plus data-k. SAFE stretches with it, so
+  // lay the game out from WIDTH / HEIGHT / SAFE rather than fixed numbers.
+  const AD_LAYOUT = String(ad.dataset.layout || "").split("x").map(Number);
+  const WIDTH = AD_LAYOUT[0] > 0 ? AD_LAYOUT[0] : FORMATS[FORMAT].width;
+  const HEIGHT = AD_LAYOUT[1] > 0 ? AD_LAYOUT[1] : FORMATS[FORMAT].height;
+  const K = Number(ad.dataset.k) > 0 ? Number(ad.dataset.k) : FORMATS[FORMAT].k;
   const SAFE = { ...FORMATS[FORMAT].safe };
+  SAFE.w = WIDTH - SAFE.x;
+  SAFE.h = HEIGHT - SAFE.y;
 
   // The sticky-bottom variant keeps its close button clear of play.
   if (closeButton) {
@@ -200,14 +207,20 @@
 
   /* --------------------------------------------------------------------- GAME */
 
-  // World units are the creative's authored pixels (300x250, 200x480,
-  // 1456x180); drawing is scaled by 1/K so the board keeps one physical size.
+  // World units are the native creatives' authored pixels (300x250, 200x480,
+  // 1456x180); drawing is scaled by 1/WK so the board keeps one physical size.
   // Physics runs in a board frame: x across the board, y along gravity. The
   // popup and rail use it as is; the strip turns it on its side so balls fall
   // to the right while the dropper slides up and down the left edge.
-  const WW = WIDTH * K;
-  const WH = HEIGHT * K;
-  const WSAFE = { x: SAFE.x * K, y: SAFE.y * K, w: SAFE.w * K, h: SAFE.h * K };
+  // WK is the family's world scale, not the IAB page scale K: popup 1, rail
+  // 2, and the strip is always 180 units tall (1456/430 in the 53 px strips,
+  // 1.8 in the 100 px tall ones, whose board fills the height with bigger
+  // pegs and balls).
+  const WK = FORMAT === "popup" ? 1 : FORMAT === "rail" ? 2 : HEIGHT < 60 ? 1456 / 430 : 180 / HEIGHT;
+  const TALL = FORMAT === "strip" && HEIGHT >= 60;
+  const WW = WIDTH * WK;
+  const WH = HEIGHT * WK;
+  const WSAFE = { x: SAFE.x * WK, y: SAFE.y * WK, w: SAFE.w * WK, h: SAFE.h * WK };
   const SIDEWAYS = FORMAT === "strip";
 
   const TAU = Math.PI * 2;
@@ -217,21 +230,46 @@
 
   // Board geometry per format, in board units. The rail is a narrow, tall
   // five-slot board; the strip a long five-slot board lying on its side.
+  // Other layout sizes: the square popup (300 tall) adds peg rows in its
+  // extra height (17 units a row) and keeps the slot depth; the wider rail
+  // (120) stretches the board, pegs and slots across the extra width; the
+  // narrow strip keeps the native board (it fits, brand panel and all); the
+  // tall strips fit as many 27-unit rows as their play width allows (14 in
+  // the Billboard, 9 in the Large Mobile Banner) in front of shallower slots,
+  // with the board centred in what is left. A short board scatters less, so
+  // its jackpot nudge eases off (1.7 at 14+ rows, ~1.36 at 9), which keeps
+  // simulated win rates near the native strip's.
+  const POPUP_ROWS = FORMAT === "popup" ? Math.round((WH - 250) / 17) : 0;
+  const RAIL_W = FORMAT === "rail" ? WW - 20 : 180;
+  const TALL_ALONG = WSAFE.w - 28;                        // board units from BX to the right margin
+  const TALL_ROWS = Math.max(1, Math.floor((TALL_ALONG - 6 - 80 - 36 - 72) / 27) + 1);
+  const TALL_SLOTS = 72 + (TALL_ROWS - 1) * 27 + 36;
   const LAYOUT = {
     popup: {
-      left: 12, right: 288, rail: 36, pegTop: 66, rows: 8, gapY: 17, pegDx: 276 / 14, slotTop: 204, floor: 244,
+      left: 12, right: 288, rail: 36, pegTop: 66, rows: 8 + POPUP_ROWS, gapY: 17, pegDx: 276 / 14, slotTop: 204 + POPUP_ROWS * 17, floor: WH - 6,
       values: [10, 50, 100, 500, 100, 50, 10], goal: 700, label: 11, hint: 10
     },
     rail: {
-      left: 10, right: 190, rail: WSAFE.y + 16, pegTop: WSAFE.y + 64, rows: 9, gapY: 26, pegDx: 20, drag: 2.2, slotTop: WSAFE.y + 300, floor: WH - 12,
+      left: 10, right: 10 + RAIL_W, rail: WSAFE.y + 16, pegTop: WSAFE.y + 64, rows: 9, gapY: 26, pegDx: (20 * RAIL_W) / 180, drag: 2.2, slotTop: WSAFE.y + 300, floor: WH - 12,
       values: [10, 100, 500, 100, 10], goal: 700, label: 15, hint: 14
     },
-    strip: {
-      left: 8, right: 172, rail: 30, pegTop: 72, rows: 17, gapY: 27, pegDx: 20.5, drag: 2.6, bias: 1.7, slotTop: 540, floor: 630,
-      values: [10, 100, 500, 100, 10], goal: 700, label: 24, hint: 24
-    }
+    strip: TALL
+      ? {
+        left: 8, right: 172, rail: 30, pegTop: 72, rows: TALL_ROWS, gapY: 27, pegDx: 20.5, drag: 2.6, bias: 1.7 * Math.min(1, (TALL_ROWS + 11) / 25), slotTop: TALL_SLOTS, floor: TALL_SLOTS + 80,
+        values: [10, 100, 500, 100, 10], goal: 700, label: 22, hint: 20, slack: TALL_ALONG - (TALL_SLOTS + 86)
+      }
+      : {
+        left: 8, right: 172, rail: 30, pegTop: 72, rows: 17, gapY: 27, pegDx: 20.5, drag: 2.6, bias: 1.7, slotTop: 540, floor: 630,
+        values: [10, 100, 500, 100, 10], goal: 700, label: 24, hint: 24
+      }
   }[FORMAT];
   CONFIG.goal = LAYOUT.goal;
+  // When the page scales the layout down (Small Square, Mobile Leaderboard)
+  // the hint pill grows back to its served size and slot values part-way.
+  if (K < 1) {
+    LAYOUT.hint /= K;
+    LAYOUT.label = Math.round(LAYOUT.label / Math.sqrt(K));
+  }
 
   const BOARD = { left: LAYOUT.left, right: LAYOUT.right, mid: (LAYOUT.left + LAYOUT.right) / 2, end: LAYOUT.floor + 6 };
   const SPAWN_Y = LAYOUT.rail + 12;
@@ -261,7 +299,7 @@
   // Board <-> world. The strip mirrors the board across its diagonal (board
   // x runs down the band, board y runs right), so text is always drawn in
   // world space, never through this transform.
-  const BX = SIDEWAYS ? WSAFE.x + 16 : 0;
+  const BX = SIDEWAYS ? WSAFE.x + 16 + (LAYOUT.slack || 0) / 2 : 0;
   const toWorld = (x, y) => (SIDEWAYS ? [BX + y, x] : [x, y]);
   const toBoard = (x, y) => (SIDEWAYS ? [y, x - BX] : [x, y]);
   const boardSpace = (c) => {
@@ -273,11 +311,11 @@
   // Effects live in served pixels.
   const fxBurst = (x, y, color, count, speed) => {
     const [wx, wy] = toWorld(x, y);
-    burst(wx / K, wy / K, color, count, speed / Math.sqrt(K));
+    burst(wx / WK, wy / WK, color, count, speed / Math.sqrt(WK));
   };
   const fxText = (x, y, text, color) => {
     const [wx, wy] = toWorld(x, y);
-    floatText(wx / K, wy / K, text, color);
+    floatText(wx / WK, wy / WK, text, color);
   };
 
   // Staggered rows; the outermost pegs keep a ball-wide gap to the walls.
@@ -353,7 +391,7 @@
     layer.width = Math.round(WIDTH * DPR);
     layer.height = Math.round(HEIGHT * DPR);
     const c = layer.getContext("2d");
-    c.setTransform(DPR / K, 0, 0, DPR / K, 0, 0);
+    c.setTransform(DPR / WK, 0, 0, DPR / WK, 0, 0);
     const rnd = seeded(23);
     c.fillStyle = shade(c.createLinearGradient(0, 0, 0, WH), PALETTE.bg);
     c.fillRect(0, 0, WW, WH);
@@ -871,7 +909,7 @@
   const draw = (time) => {
     const hint = Shell.phase === "play" && !game.moved;
     ctx.save();
-    ctx.scale(1 / K, 1 / K);
+    ctx.scale(1 / WK, 1 / WK);
     ctx.drawImage(bgLayer, 0, 0, WW, WH);
     ctx.save();
     boardSpace(ctx);
@@ -898,7 +936,7 @@
     : { ArrowLeft: "left", ArrowRight: "right" };
 
   // Pointer hooks get served pixels; the dropper follows the board x.
-  const boardX = (point) => clamp(toBoard(point.x * K, point.y * K)[0], DROPPER.min, DROPPER.max);
+  const boardX = (point) => clamp(toBoard(point.x * WK, point.y * WK)[0], DROPPER.min, DROPPER.max);
 
   const onPointerDown = (point) => {
     game.dragging = true;

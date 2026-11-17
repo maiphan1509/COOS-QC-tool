@@ -95,10 +95,17 @@
   };
 
   const FORMAT = FORMATS[ad.dataset.format] ? ad.dataset.format : "popup";
-  const WIDTH = FORMATS[FORMAT].width;
-  const HEIGHT = FORMATS[FORMAT].height;
-  const K = FORMATS[FORMAT].k;
+  // The IAB sizes (Square, Half Page, Billboard...) reuse one of the three
+  // families at another layout size: build.py writes it on #ad as
+  // data-layout="<width>x<height>" plus data-k. SAFE stretches with it, so
+  // lay the game out from WIDTH / HEIGHT / SAFE rather than fixed numbers.
+  const AD_LAYOUT = String(ad.dataset.layout || "").split("x").map(Number);
+  const WIDTH = AD_LAYOUT[0] > 0 ? AD_LAYOUT[0] : FORMATS[FORMAT].width;
+  const HEIGHT = AD_LAYOUT[1] > 0 ? AD_LAYOUT[1] : FORMATS[FORMAT].height;
+  const K = Number(ad.dataset.k) > 0 ? Number(ad.dataset.k) : FORMATS[FORMAT].k;
   const SAFE = { ...FORMATS[FORMAT].safe };
+  SAFE.w = WIDTH - SAFE.x;
+  SAFE.h = HEIGHT - SAFE.y;
 
   // The sticky-bottom variant keeps its close button clear of play.
   if (closeButton) {
@@ -253,6 +260,33 @@
       topPad: 7, bottomPad: 5, maxShift: 10, speed: [62, 70], goal: 10
     }
   }[FORMAT];
+
+  // IAB layouts that reshape the play area. The native sizes (300x250,
+  // 100x240, 430x53) skip every branch below and keep the table above as is.
+  // Popup 300x300 needs nothing extra: sky, skyline and the gap range already
+  // grow with HEIGHT, and the physics stay the popup's.
+  const TALL_STRIP = FORMAT === "strip" && HEIGHT >= 80;   // 388x100, 320x100
+  if (FORMAT === "rail" && WIDTH >= 115) {
+    // Half page 120x240: the bird keeps the rail's share of the width and the
+    // first pair enters from the same spot against the right edge.
+    LAYOUT.birdX = 32;
+    LAYOUT.firstX = 100;
+  } else if (FORMAT === "strip" && !TALL_STRIP && WIDTH < 400) {
+    // Mobile leaderboard 340x53: the first pair waits clear of the right edge.
+    LAYOUT.firstX = 200;
+  } else if (TALL_STRIP) {
+    // Billboard 388x100 / large mobile banner 320x100: twice the strip's
+    // height, so a rail-sized bird and towers. Gaps, flap height and the
+    // tower crossing time keep the native strip's proportions (gap ~2.4 flap
+    // heights, shrinking to ~2), so it plays like the strip, just larger.
+    const long = WIDTH >= 360;
+    Object.assign(LAYOUT, {
+      scale: 0.72, font: 10, groundH: 9, birdX: 50, hitR: 5,
+      gravity: 480, flapV: -120, maxFall: 210,
+      pillarW: 22, capH: 6, spacing: long ? 136 : 124, firstX: long ? 236 : 196, gap: [46, 40],
+      topPad: 9, bottomPad: 7, maxShift: 24, speed: [70, 80], goal: 10
+    });
+  }
 
   CONFIG.goal = LAYOUT.goal;
 
@@ -1039,6 +1073,8 @@
       drawCaption("TAP · CLICK · SPACE TO FLAP", WIDTH / 2, GROUND_Y - 19, 9);
     } else if (FORMAT === "rail") {
       drawCaption("TAP TO FLAP", SAFE.x + SAFE.w / 2, GROUND_Y - 14, 7.5);
+    } else if (TALL_STRIP) {
+      drawCaption("TAP · SPACE TO FLAP", (BIRD.x + PILLAR.firstX) / 2 + 8, GROUND_Y - 13, 8.5);
     } else {
       drawCaption("TAP · SPACE TO FLAP", (BIRD.x + PILLAR.firstX) / 2 + 8, GROUND_Y - 9, 7.5);
     }

@@ -68,10 +68,17 @@
   };
 
   const FORMAT = FORMATS[ad.dataset.format] ? ad.dataset.format : "popup";
-  const WIDTH = FORMATS[FORMAT].width;
-  const HEIGHT = FORMATS[FORMAT].height;
-  const K = FORMATS[FORMAT].k;
+  // The IAB sizes (Square, Half Page, Billboard...) reuse one of the three
+  // families at another layout size: build.py writes it on #ad as
+  // data-layout="<width>x<height>" plus data-k. SAFE stretches with it, so
+  // lay the game out from WIDTH / HEIGHT / SAFE rather than fixed numbers.
+  const AD_LAYOUT = String(ad.dataset.layout || "").split("x").map(Number);
+  const WIDTH = AD_LAYOUT[0] > 0 ? AD_LAYOUT[0] : FORMATS[FORMAT].width;
+  const HEIGHT = AD_LAYOUT[1] > 0 ? AD_LAYOUT[1] : FORMATS[FORMAT].height;
+  const K = Number(ad.dataset.k) > 0 ? Number(ad.dataset.k) : FORMATS[FORMAT].k;
   const SAFE = { ...FORMATS[FORMAT].safe };
+  SAFE.w = WIDTH - SAFE.x;
+  SAFE.h = HEIGHT - SAFE.y;
 
   // The sticky-bottom variant keeps its close button clear of play.
   if (closeButton) {
@@ -207,10 +214,17 @@
 
   // Fruit art is authored once (popup size) and scaled by `fruit`. The strip
   // swaps tall tosses for short, floaty arcs across the band.
+  // IAB layouts: the Square (popup 300 tall) and the 100px-tall strips
+  // (Billboard, Large Mobile Banner) stretch every vertical measure by VS,
+  // gravity included, so a toss takes as long as at the native size; the
+  // Half Page rail (120 wide) spreads the tosses by HS. Both are 1 at the
+  // native layouts.
+  const VS = FORMAT === "popup" ? SAFE.h / 226 : (FORMAT === "strip" && HEIGHT > 60 ? HEIGHT / ((180 * 430) / 1456) : 1);
+  const HS = FORMAT === "rail" ? WIDTH / 100 : 1;
   const LAYOUT = {
     popup: {
-      fruit: 1, gravity: 300, launchPad: 22, apexTop: 30, apexBottom: 96,
-      spawnInset: 50, landInset: 40, bladePad: 8, blade: 1, combo: 17, missBand: 50,
+      fruit: 1 + (VS - 1) * 0.45, gravity: 300 * VS, launchPad: 22 * VS, apexTop: 30 * VS, apexBottom: 96 * VS,
+      spawnInset: 50, landInset: 40, bladePad: 8, blade: 1, combo: 17, missBand: 50 * VS,
       ramp: [
         { until: 5, gap: 1.0, min: 1, max: 1, bomb: 0 },
         { until: 14, gap: 1.15, min: 1, max: 2, bomb: 0.22 },
@@ -218,8 +232,8 @@
       ]
     },
     rail: {
-      fruit: 0.62, gravity: 260, launchPad: 16, apexTop: 14, apexBottom: 80,
-      spawnInset: 22, landInset: 14, bladePad: 6, blade: 0.7, combo: 11, missBand: 34,
+      fruit: 0.62 * (1 + (HS - 1) * 0.5), gravity: 260, launchPad: 16, apexTop: 14, apexBottom: 80,
+      spawnInset: 22 * HS, landInset: 14 * HS, bladePad: 6, blade: 0.7, combo: 11, missBand: 34,
       ramp: [
         { until: 5, gap: 0.95, min: 1, max: 1, bomb: 0 },
         { until: 14, gap: 1.05, min: 1, max: 2, bomb: 0.2 },
@@ -227,8 +241,9 @@
       ]
     },
     strip: {
-      fruit: 0.5, gravity: 110, launchPad: 12, apexTop: 3, apexBottom: 22,
-      spawnInset: 24, landInset: 24, bladePad: 6, blade: 0.65, combo: 10, missBand: 16,
+      fruit: 0.5 + (VS - 1) * 0.34, gravity: 110 * VS, launchPad: 12 * VS, apexTop: 3 * VS, apexBottom: 22 * VS,
+      spawnInset: 24 + (VS - 1) * 10, landInset: 24 + (VS - 1) * 10, bladePad: 6 + (VS - 1) * 2,
+      blade: 0.65 + (VS - 1) * 0.25, combo: 10 + (VS - 1) * 4, missBand: 16 * VS,
       ramp: [
         { until: 5, gap: 0.95, min: 1, max: 1, bomb: 0 },
         { until: 14, gap: 1.05, min: 1, max: 2, bomb: 0.2 },

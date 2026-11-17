@@ -65,10 +65,17 @@
   };
 
   const FORMAT = FORMATS[ad.dataset.format] ? ad.dataset.format : "popup";
-  const WIDTH = FORMATS[FORMAT].width;
-  const HEIGHT = FORMATS[FORMAT].height;
-  const K = FORMATS[FORMAT].k;
+  // The IAB sizes (Square, Half Page, Billboard...) reuse one of the three
+  // families at another layout size: build.py writes it on #ad as
+  // data-layout="<width>x<height>" plus data-k. SAFE stretches with it, so
+  // lay the game out from WIDTH / HEIGHT / SAFE rather than fixed numbers.
+  const AD_LAYOUT = String(ad.dataset.layout || "").split("x").map(Number);
+  const WIDTH = AD_LAYOUT[0] > 0 ? AD_LAYOUT[0] : FORMATS[FORMAT].width;
+  const HEIGHT = AD_LAYOUT[1] > 0 ? AD_LAYOUT[1] : FORMATS[FORMAT].height;
+  const K = Number(ad.dataset.k) > 0 ? Number(ad.dataset.k) : FORMATS[FORMAT].k;
   const SAFE = { ...FORMATS[FORMAT].safe };
+  SAFE.w = WIDTH - SAFE.x;
+  SAFE.h = HEIGHT - SAFE.y;
 
   // The sticky-bottom variant keeps its close button clear of play.
   if (closeButton) {
@@ -204,18 +211,33 @@
   // Well and pacing per format. The strip lays the well on its side: pieces
   // fall right to left into a 5-wide, 28-long well, so lines are short and
   // the drop is long (faster gravity, more lines to win).
+  //
+  // IAB layouts: the square popup (300x300) keeps the 10x20 well with 13px
+  // cells and stretches its side panels to match; the wide rail (120x240)
+  // centres the well and spreads the queue; the Mobile Leaderboard (340x53)
+  // shortens the side-on well to 21 rows (gravity scaled so a piece still
+  // takes as long to cross it, and one line less to win since the shorter
+  // well tops out sooner); and the 100-tall strips (Billboard 388x100,
+  // Large Mobile Banner 320x100) lay a full 10-wide well on its side, so they
+  // play like the popup (5 lines to win) instead of the 5-wide strip.
+  const TALL_STRIP = FORMAT === "strip" && HEIGHT > 80;
+  const NATIVE_STRIP = WIDTH >= 400;
+  const WIDE_TALL = WIDTH >= 380;
   const LAYOUT = {
     popup: {
-      cols: 10, rows: 20, cell: 11, rotated: false, garbage: 4, goal: 5, time: 55000,
+      cols: 10, rows: 20, cell: Math.floor((HEIGHT - 30) / 20), rotated: false, garbage: 4, goal: 5, time: 55000,
       gravity: [0.32, 0.03, 0.1], dragX: 13, dragY: 12, flick: 22, slop: 7
     },
     rail: {
       cols: 10, rows: 20, cell: 9, rotated: false, garbage: 4, goal: 5, time: 55000,
       gravity: [0.32, 0.03, 0.1], dragX: 11, dragY: 10, flick: 18, slop: 6
     },
-    strip: {
-      cols: 5, rows: 28, cell: 10, rotated: true, garbage: 3, goal: 8, time: 50000,
-      gravity: [0.15, 0.01, 0.06], dragX: 11, dragY: 10, flick: 16, slop: 6
+    strip: TALL_STRIP ? {
+      cols: 10, rows: WIDE_TALL ? 26 : 20, cell: 9, rotated: true, garbage: 4, goal: 5, time: 55000,
+      gravity: WIDE_TALL ? [0.25, 0.025, 0.08] : [0.32, 0.03, 0.1], dragX: 9, dragY: 9, flick: 16, slop: 6
+    } : {
+      cols: 5, rows: NATIVE_STRIP ? 28 : 21, cell: 10, rotated: true, garbage: 3, goal: NATIVE_STRIP ? 8 : 7, time: 50000,
+      gravity: NATIVE_STRIP ? [0.15, 0.01, 0.06] : [0.2, 0.013, 0.08], dragX: 11, dragY: 10, flick: 16, slop: 6
     }
   }[FORMAT];
 
@@ -234,7 +256,7 @@
   const WELL_W = COLS * CELL;
   const WELL_H = ROWS * CELL;
   const WELL = {
-    popup: { x: 95, y: 15 },
+    popup: { x: (WIDTH - WELL_W) / 2, y: (HEIGHT - WELL_H) / 2 },
     rail: { x: (WIDTH - WELL_W) / 2, y: SAFE.y + 3 },
     strip: { x: SAFE.x + 4, y: (HEIGHT - WELL_W) / 2 }
   }[FORMAT];
@@ -249,30 +271,46 @@
   });
 
   // Popup side panels; the rail and strip keep score, lines and time in the HUD.
-  const PANEL_W = 82;
+  // The panels fill the space beside the well (82px at 300x250), and their
+  // contents are laid out for the 220px-tall native well: PY() maps those y
+  // values onto the real well, so a taller popup spaces them out evenly.
+  const PANEL_W = (WIDTH - WELL_W - 26) / 2;
   const LEFT_X = 6;
   const RIGHT_X = WIDTH - 6 - PANEL_W;
   const LEFT_CX = LEFT_X + PANEL_W / 2;
   const RIGHT_CX = RIGHT_X + PANEL_W / 2;
+  const PANEL_S = WELL.h / 220;
+  const PY = (y) => WELL.y + (y - 15) * PANEL_S;
 
   // Upcoming-piece previews: a column in the popup, a row under the rail's
-  // well, a box after the strip's well.
+  // well, a box after the strip's well (three in the 100-tall strips).
   const NEXT_BOX = {
     popup: null,
     rail: { x: 2, y: WELL.y + WELL.h + 3, w: WIDTH - 4, h: HEIGHT - (WELL.y + WELL.h + 3) - 2 },
     strip: { x: WELL.x + WELL.w + 5, y: 2, w: SAFE.x + SAFE.w - (WELL.x + WELL.w + 5) - 2, h: HEIGHT - 4 }
   }[FORMAT];
+  const railX = (x) => NEXT_BOX.x + ((x - 2) * NEXT_BOX.w) / 96;
   const NEXT = {
-    popup: () => [{ x: RIGHT_CX, y: 54, cell: 10 }, { x: RIGHT_CX, y: 95, cell: 7 }, { x: RIGHT_CX, y: 129, cell: 7 }],
-    rail: () => [
-      { x: 42, y: NEXT_BOX.y + NEXT_BOX.h / 2, cell: 5 },
-      { x: 66, y: NEXT_BOX.y + NEXT_BOX.h / 2, cell: 4 },
-      { x: 86, y: NEXT_BOX.y + NEXT_BOX.h / 2, cell: 4 }
+    popup: () => [
+      { x: RIGHT_CX, y: PY(54), cell: Math.round(10 * PANEL_S) },
+      { x: RIGHT_CX, y: PY(95), cell: Math.round(7 * PANEL_S) },
+      { x: RIGHT_CX, y: PY(129), cell: Math.round(7 * PANEL_S) }
     ],
-    strip: () => [
-      { x: NEXT_BOX.x + NEXT_BOX.w * 0.3, y: NEXT_BOX.y + NEXT_BOX.h * 0.6, cell: 5 },
-      { x: NEXT_BOX.x + NEXT_BOX.w * 0.73, y: NEXT_BOX.y + NEXT_BOX.h * 0.6, cell: 4 }
-    ]
+    rail: () => [
+      { x: railX(42), y: NEXT_BOX.y + NEXT_BOX.h / 2, cell: 5 },
+      { x: railX(66), y: NEXT_BOX.y + NEXT_BOX.h / 2, cell: 4 },
+      { x: railX(86), y: NEXT_BOX.y + NEXT_BOX.h / 2, cell: 4 }
+    ],
+    strip: () => (TALL_STRIP
+      ? [
+        { x: NEXT_BOX.x + NEXT_BOX.w / 2, y: NEXT_BOX.y + NEXT_BOX.h * 0.42, cell: WIDE_TALL ? 8 : 7 },
+        { x: NEXT_BOX.x + NEXT_BOX.w * 0.3, y: NEXT_BOX.y + NEXT_BOX.h * 0.8, cell: WIDE_TALL ? 6 : 5 },
+        { x: NEXT_BOX.x + NEXT_BOX.w * 0.7, y: NEXT_BOX.y + NEXT_BOX.h * 0.8, cell: WIDE_TALL ? 6 : 5 }
+      ]
+      : [
+        { x: NEXT_BOX.x + NEXT_BOX.w * 0.3, y: NEXT_BOX.y + NEXT_BOX.h * 0.6, cell: 5 },
+        { x: NEXT_BOX.x + NEXT_BOX.w * 0.73, y: NEXT_BOX.y + NEXT_BOX.h * 0.6, cell: 4 }
+      ])
   }[FORMAT]();
 
   const FONT = {
@@ -676,26 +714,26 @@
     }
 
     // Popup panels: brand, stat labels, control hints, queue boxes, product mark.
-    label(g, "VELTO", LEFT_CX, 29, 14, PALETTE.accent);
-    label(g, "WATCH 4", LEFT_CX, 42, 8, PALETTE.text);
+    label(g, "VELTO", LEFT_CX, PY(29), 14, PALETTE.accent);
+    label(g, "WATCH 4", LEFT_CX, PY(42), 8, PALETTE.text);
     g.fillStyle = PALETTE.panelEdge;
-    g.fillRect(LEFT_X + 10, 52, PANEL_W - 20, 1);
-    label(g, "SCORE", LEFT_CX, 62);
-    label(g, "LINES", LEFT_CX, 96);
-    label(g, "TIME", LEFT_CX, 142);
-    g.fillRect(LEFT_X + 10, 172, PANEL_W - 20, 1);
+    g.fillRect(LEFT_X + 10, PY(52), PANEL_W - 20, 1);
+    label(g, "SCORE", LEFT_CX, PY(62));
+    label(g, "LINES", LEFT_CX, PY(96));
+    label(g, "TIME", LEFT_CX, PY(142));
+    g.fillRect(LEFT_X + 10, PY(172), PANEL_W - 20, 1);
     [["TAP", "rotate", 188], ["DRAG", "move", 203], ["SWIPE ↓", "drop", 218]].forEach(([key, action, y]) => {
-      label(g, key, LEFT_CX + 2, y, 8, PALETTE.accent, "right");
-      label(g, action, LEFT_CX + 6, y, 8, PALETTE.text, "left");
+      label(g, key, LEFT_CX + 2, PY(y), 8, PALETTE.accent, "right");
+      label(g, action, LEFT_CX + 6, PY(y), 8, PALETTE.text, "left");
     });
-    label(g, "NEXT", RIGHT_CX, 26);
+    label(g, "NEXT", RIGHT_CX, PY(26));
     [[34, 40], [80, 30], [114, 30]].forEach(([y, h]) => {
-      roundRect(g, RIGHT_X + 8, y, PANEL_W - 16, h, 6);
+      roundRect(g, RIGHT_X + 8, PY(y), PANEL_W - 16, h * PANEL_S, 6);
       g.fillStyle = PALETTE.box;
       g.fill();
     });
-    label(g, "LEVEL", RIGHT_CX, 160);
-    paintWatch(g, RIGHT_CX, 206);
+    label(g, "LEVEL", RIGHT_CX, PY(160));
+    paintWatch(g, RIGHT_CX, PY(206));
   });
 
   /* State */
@@ -1265,17 +1303,17 @@
     ctx.textBaseline = "middle";
     ctx.fillStyle = PALETTE.text;
     ctx.font = "900 15px Arial, Helvetica, sans-serif";
-    ctx.fillText(String(Shell.score), LEFT_CX, 77);
-    ctx.fillText(`${Math.min(game.lines, GOAL_LINES)} / ${GOAL_LINES}`, LEFT_CX, 111);
+    ctx.fillText(String(Shell.score), LEFT_CX, PY(77));
+    ctx.fillText(`${Math.min(game.lines, GOAL_LINES)} / ${GOAL_LINES}`, LEFT_CX, PY(111));
     const remaining = Math.max(0, Math.ceil((CONFIG.maxPlayMs - (Shell.phase === "intro" ? 0 : Shell.elapsed)) / 1000));
     ctx.fillStyle = remaining <= 10 && Shell.phase === "play" ? PALETTE.bad : PALETTE.text;
-    ctx.fillText(String(remaining), LEFT_CX, 157);
+    ctx.fillText(String(remaining), LEFT_CX, PY(157));
     ctx.fillStyle = PALETTE.text;
-    ctx.fillText(String(1 + game.lines), RIGHT_CX, 177);
+    ctx.fillText(String(1 + game.lines), RIGHT_CX, PY(177));
 
     const pip = (PANEL_W - 22 - (GOAL_LINES - 1) * 3) / GOAL_LINES;
     for (let index = 0; index < GOAL_LINES; index += 1) {
-      roundRect(ctx, LEFT_X + 11 + index * (pip + 3), 123, pip, 5, 2.5);
+      roundRect(ctx, LEFT_X + 11 + index * (pip + 3), PY(123), pip, 5, 2.5);
       ctx.fillStyle = index < game.lines ? PALETTE.accent : "rgba(170, 230, 220, 0.16)";
       ctx.fill();
     }

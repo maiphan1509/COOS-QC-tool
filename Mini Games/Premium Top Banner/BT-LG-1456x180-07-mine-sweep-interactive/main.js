@@ -64,10 +64,17 @@
   };
 
   const FORMAT = FORMATS[ad.dataset.format] ? ad.dataset.format : "popup";
-  const WIDTH = FORMATS[FORMAT].width;
-  const HEIGHT = FORMATS[FORMAT].height;
-  const K = FORMATS[FORMAT].k;
+  // The IAB sizes (Square, Half Page, Billboard...) reuse one of the three
+  // families at another layout size: build.py writes it on #ad as
+  // data-layout="<width>x<height>" plus data-k. SAFE stretches with it, so
+  // lay the game out from WIDTH / HEIGHT / SAFE rather than fixed numbers.
+  const AD_LAYOUT = String(ad.dataset.layout || "").split("x").map(Number);
+  const WIDTH = AD_LAYOUT[0] > 0 ? AD_LAYOUT[0] : FORMATS[FORMAT].width;
+  const HEIGHT = AD_LAYOUT[1] > 0 ? AD_LAYOUT[1] : FORMATS[FORMAT].height;
+  const K = Number(ad.dataset.k) > 0 ? Number(ad.dataset.k) : FORMATS[FORMAT].k;
   const SAFE = { ...FORMATS[FORMAT].safe };
+  SAFE.w = WIDTH - SAFE.x;
+  SAFE.h = HEIGHT - SAFE.y;
 
   // The sticky-bottom variant keeps its close button clear of play.
   if (closeButton) {
@@ -195,12 +202,34 @@
 
   /* --------------------------------------------------------------------- GAME */
 
-  // Board size per format; the strip fits as many columns as its width allows
-  // next to the control panel.
+  // Board size per layout. The native sizes (popup 300x250, rail 100x240,
+  // strip 430x53) keep their hand-tuned boards; the IAB layouts reshape it:
+  // the Square (popup 300x300) adds two rows, the Half Page (rail 120 wide)
+  // a column, the Mobile Leaderboard's narrower strip fits fewer columns and
+  // the 100-tall strips (Billboard, Large Mobile Banner) play five rows of
+  // bigger tiles. Mines keep each family's density (about one cell in seven),
+  // so CONFIG.goal (the safe cells, set below) grows with the board.
+  const TALL = FORMAT === "strip" && HEIGHT > 80;
+  const POP_DY = FORMAT === "popup" ? HEIGHT - 250 : 0;   // extra popup height (Square: 50)
+  const RAIL_DX = FORMAT === "rail" ? WIDTH - 100 : 0;    // extra rail width (Half Page: 20)
+  const TALL_PANEL = 80;                                  // mode button + mines / shield column
   const BOARDS = {
-    popup: { cols: 9, rows: 8, cell: 26, mines: 10 },
-    rail: { cols: 5, rows: 8, cell: 18, mines: 6 },
-    strip: { cols: Math.min(16, Math.floor((SAFE.w - 100) / 16)), rows: 3, cell: 16, mines: 7 }
+    popup: POP_DY >= 50
+      ? { cols: 9, rows: 10, cell: 26, mines: 12 }
+      : { cols: 9, rows: 8, cell: 26, mines: 10 },
+    rail: RAIL_DX >= 20
+      ? { cols: 6, rows: 8, cell: 18, mines: 7 }
+      : { cols: 5, rows: 8, cell: 18, mines: 6 },
+    strip: TALL
+      ? (() => {
+        const cols = Math.min(16, Math.floor((SAFE.w - 8 - 6 - TALL_PANEL) / 18));
+        return { cols, rows: 5, cell: 18, mines: Math.round(cols * 5 * 0.15) };
+      })()
+      : (() => {
+        // 7 mines on the 16- and 15-column native strips.
+        const cols = Math.min(16, Math.floor((SAFE.w - 100) / 16));
+        return { cols, rows: 3, cell: 16, mines: Math.round((cols * 3 * 7) / 48) };
+      })()
   };
 
   const COLS = BOARDS[FORMAT].cols;
@@ -212,39 +241,59 @@
   const BOARD = {
     popup: { x: 8, y: 32 },
     rail: { x: (WIDTH - COLS * CELL) / 2, y: SAFE.y + 4 },
-    strip: { x: SAFE.x + 4, y: (HEIGHT - ROWS * CELL) / 2 }
+    // The tall strip centres board + panel in the play area.
+    strip: TALL
+      ? { x: SAFE.x + (SAFE.w - (COLS * CELL + 6 + TALL_PANEL)) / 2, y: (HEIGHT - ROWS * CELL) / 2 }
+      : { x: SAFE.x + 4, y: (HEIGHT - ROWS * CELL) / 2 }
   }[FORMAT];
   BOARD.w = COLS * CELL;
   BOARD.h = ROWS * CELL;
 
   // Mode toggle, mines counter and shield: a column beside the board in the
-  // popup, a row under it in the rail, a row after it in the strip.
+  // popup, a row under it in the rail, a row after it in the strip, and in
+  // the tall strip a mode button (with the hint) next to a mines / shield column.
   const PANEL_X = BOARD.x + BOARD.w + 6;
   const WIDGETS = {
     popup: {
-      mode: { x: 250, y: 34, w: 44, h: 48 },
-      mines: { x: 272, iconY: 128, numY: 151, labelY: 164 },
-      shield: { x: 272, y: 196, labelY: 216, label2Y: 225 },
+      // The Square's extra height spreads the column out (offsets are 0 at 250).
+      mode: { x: 250, y: 34, w: 44, h: 48 + POP_DY * 0.16 },
+      mines: { x: 272, iconY: 128 + POP_DY * 0.44, numY: 151 + POP_DY * 0.44, labelY: 164 + POP_DY * 0.44 },
+      shield: { x: 272, y: 196 + POP_DY * 0.74, labelY: 216 + POP_DY * 0.74, label2Y: 225 + POP_DY * 0.74 },
       hint: true
     },
     rail: {
-      mode: { x: 5, y: BOARD.y + BOARD.h + 7, w: 36, h: HEIGHT - (BOARD.y + BOARD.h + 7) - 4 },
-      mines: { x: 62, iconY: BOARD.y + BOARD.h + 17, numY: BOARD.y + BOARD.h + 35, labelY: BOARD.y + BOARD.h + 47 },
-      shield: { x: 87, y: BOARD.y + BOARD.h + 21, labelY: BOARD.y + BOARD.h + 41 },
+      mode: { x: 5 + RAIL_DX * 0.05, y: BOARD.y + BOARD.h + 7, w: 36 + RAIL_DX * 0.2, h: HEIGHT - (BOARD.y + BOARD.h + 7) - 4 },
+      mines: { x: 62 + RAIL_DX * 0.4, iconY: BOARD.y + BOARD.h + 17, numY: BOARD.y + BOARD.h + 35, labelY: BOARD.y + BOARD.h + 47 },
+      shield: { x: 87 + RAIL_DX * 0.7, y: BOARD.y + BOARD.h + 21, labelY: BOARD.y + BOARD.h + 41 },
       hint: false
     },
-    strip: {
-      mode: { x: PANEL_X, y: 6, w: 34, h: HEIGHT - 12 },
-      mines: { x: PANEL_X + 56, iconY: 14, numY: 30, labelY: 43 },
-      shield: { x: PANEL_X + 86, y: 20, labelY: 40 },
-      hint: false
-    }
+    strip: TALL
+      ? {
+        mode: { x: PANEL_X, y: HEIGHT / 2 - 40, w: 42, h: 58 },
+        mines: { x: PANEL_X + 64, iconY: HEIGHT / 2 - 30, numY: HEIGHT / 2 - 8, labelY: HEIGHT / 2 + 5 },
+        shield: { x: PANEL_X + 64, y: HEIGHT / 2 + 24, labelY: HEIGHT / 2 + 41 },
+        hint: true
+      }
+      : {
+        mode: { x: PANEL_X, y: 6, w: 34, h: HEIGHT - 12 },
+        mines: { x: PANEL_X + 56, iconY: 14, numY: 30, labelY: 43 },
+        shield: { x: PANEL_X + 86, y: 20, labelY: 40 },
+        hint: false
+      }
   }[FORMAT];
+
+  // Panel art sizes: the popup's, the compact rail / strip ones, and an
+  // in-between set for the tall strip's roomier panel.
+  const PANEL_ART = TALL
+    ? { icon: 1, mineR: 5, shield: 0.85, radius: 7 }
+    : COMPACT
+      ? { icon: 0.75, mineR: 4.5, shield: 0.7, radius: 6 }
+      : { icon: 1, mineR: 6, shield: 1, radius: 8 };
 
   const FONT = {
     label: COMPACT ? 7 : 8,
-    mode: COMPACT ? 7 : 9,
-    count: COMPACT ? 11 : 16,
+    mode: TALL ? 8 : COMPACT ? 7 : 9,
+    count: TALL ? 13 : COMPACT ? 11 : 16,
     cell: Math.round(CELL * 0.58)
   };
 
@@ -611,7 +660,7 @@
         g.fillRect(x, y, 1, 1);
       }
     }
-    const frame = COMPACT ? 2 : 4;
+    const frame = TALL ? 3 : COMPACT ? 2 : 4;
     roundRect(g, BOARD.x - frame, BOARD.y - frame, BOARD.w + frame * 2, BOARD.h + frame * 2, frame + 3);
     g.fillStyle = "rgba(2, 8, 16, 0.85)";
     g.fill();
@@ -763,12 +812,12 @@
     const flagMode = game.mode === "flag";
     const mode = WIDGETS.mode;
     const pulse = 1 + game.modePulse * 0.08;
-    const iconScale = COMPACT ? 0.75 : 1;
+    const iconScale = PANEL_ART.icon;
 
     ctx.save();
     ctx.translate(mode.x + mode.w / 2, mode.y + mode.h / 2);
     ctx.scale(pulse, pulse);
-    roundRect(ctx, -mode.w / 2, -mode.h / 2, mode.w, mode.h, COMPACT ? 6 : 8);
+    roundRect(ctx, -mode.w / 2, -mode.h / 2, mode.w, mode.h, PANEL_ART.radius);
     ctx.fillStyle = flagMode ? "rgba(255, 77, 94, 0.22)" : "rgba(94, 242, 214, 0.16)";
     ctx.fill();
     ctx.strokeStyle = flagMode ? PALETTE.flag : PALETTE.accent;
@@ -797,7 +846,7 @@
     }
 
     const mines = WIDGETS.mines;
-    const mineR = COMPACT ? 4.5 : 6;
+    const mineR = PANEL_ART.mineR;
     ctx.fillStyle = "rgba(94, 242, 214, 0.22)";
     ctx.beginPath();
     ctx.arc(mines.x, mines.iconY, mineR * 2.1, 0, Math.PI * 2);
@@ -811,7 +860,7 @@
     ctx.fillText("MINES", mines.x, mines.labelY);
 
     const shield = WIDGETS.shield;
-    const shieldScale = COMPACT ? 0.7 : 1;
+    const shieldScale = PANEL_ART.shield;
     if (game.shieldPulse > 0) {
       ctx.fillStyle = `rgba(127, 196, 255, ${game.shieldPulse * 0.35})`;
       ctx.beginPath();

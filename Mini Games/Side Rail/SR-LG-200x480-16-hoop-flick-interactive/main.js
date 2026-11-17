@@ -73,10 +73,17 @@
   };
 
   const FORMAT = FORMATS[ad.dataset.format] ? ad.dataset.format : "popup";
-  const WIDTH = FORMATS[FORMAT].width;
-  const HEIGHT = FORMATS[FORMAT].height;
-  const K = FORMATS[FORMAT].k;
+  // The IAB sizes (Square, Half Page, Billboard...) reuse one of the three
+  // families at another layout size: build.py writes it on #ad as
+  // data-layout="<width>x<height>" plus data-k. SAFE stretches with it, so
+  // lay the game out from WIDTH / HEIGHT / SAFE rather than fixed numbers.
+  const AD_LAYOUT = String(ad.dataset.layout || "").split("x").map(Number);
+  const WIDTH = AD_LAYOUT[0] > 0 ? AD_LAYOUT[0] : FORMATS[FORMAT].width;
+  const HEIGHT = AD_LAYOUT[1] > 0 ? AD_LAYOUT[1] : FORMATS[FORMAT].height;
+  const K = Number(ad.dataset.k) > 0 ? Number(ad.dataset.k) : FORMATS[FORMAT].k;
   const SAFE = { ...FORMATS[FORMAT].safe };
+  SAFE.w = WIDTH - SAFE.x;
+  SAFE.h = HEIGHT - SAFE.y;
 
   // The sticky-bottom variant keeps its close button clear of play.
   if (closeButton) {
@@ -205,34 +212,53 @@
 
   /* --------------------------------------------------------------------- GAME */
 
-  // World units are the creative's authored pixels (300x250, 200x480,
-  // 1456x180); drawing is scaled by 1/K so the court keeps one physical size.
+  // World units are the native creatives' authored pixels (300x250, 200x480,
+  // 1456x180); drawing is scaled by 1/WK so the court keeps one physical size.
   // Popup and rail are pseudo-3D: the ball lives in x right, y up, z into the
   // screen and is projected with a pinhole camera (one unit is one pixel at
   // z = 0, so the resting ball and the finger share a scale). The strip is
   // too short for depth, so it plays as a 2D side view with the same rules.
-  const WW = WIDTH * K;
-  const WH = HEIGHT * K;
-  const WSAFE = { x: SAFE.x * K, y: SAFE.y * K, w: SAFE.w * K, h: SAFE.h * K };
+  // WK is the family's world scale, not the IAB page scale K. The popup's
+  // world is always 250 units tall, so the square (300 high) shows the same
+  // court 1.2x bigger in a 250-wide world; the rail keeps 2 (the 120-wide one
+  // just sees more arena either side); the strip is always 180 units tall
+  // (1456/430 in the 53 px strips, 1.8 in the 100 px tall ones).
+  const WK = FORMAT === "popup" ? 250 / HEIGHT : FORMAT === "rail" ? 2 : HEIGHT < 60 ? 1456 / 430 : 180 / HEIGHT;
+  const TALL = FORMAT === "strip" && HEIGHT >= 60;
+  const WW = WIDTH * WK;
+  const WH = HEIGHT * WK;
+  const WSAFE = { x: SAFE.x * WK, y: SAFE.y * WK, w: SAFE.w * WK, h: SAFE.h * WK };
   const SIDE = FORMAT === "strip";
 
   const TAU = Math.PI * 2;
   const STEP = 1 / 120;                 // fixed physics step
   const MAX_STEPS = 8;
+  // The camera stays centred on the court whatever the world width.
   const VIEW = FORMAT === "rail"
-    ? { cx: 100, horizon: 125, eye: 440, focal: 300 }
-    : { cx: 150, horizon: 34, eye: 339, focal: 220 };
+    ? { cx: WW / 2, horizon: 125, eye: 440, focal: 300 }
+    : { cx: WW / 2, horizon: 34, eye: 339, focal: 220 };
   const GRAVITY = 1450;
   const BALL_R = 22;
   const START = { x: 0, y: 153, z: 0 };
-  const HOOP = { z: 400, y: 150, r: 44, tube: 2.5, net: 48, slideAfter: 3, slideAmp: 55, slideSpeed: 0.9, ramp: 1.5 };
+  // Strip side view (y down): ball on the left, hoop ~300 units to its right.
+  // The 53 px strips keep the ball right of the hint label (~330 units in
+  // the narrow Mobile Leaderboard, so its ball starts a little further in
+  // than 30% of the play width would put it); the tall
+  // strips centre ball, hoop and stanchion in their play width, and the
+  // narrower one (Large Mobile Banner) shortens the throw and the hoop's
+  // slide in proportion so the moving hoop never leaves the band.
+  const FLAT_GAP = TALL ? Math.min(300, ((WSAFE.w - 128) * 300) / 355) : 300;
+  const FLAT_SLIDE = (FLAT_GAP * 55) / 300;
+  const FLAT_START = TALL
+    ? WSAFE.x + 32 + (WSAFE.w - (32 + FLAT_GAP + FLAT_SLIDE + 76)) / 2
+    : WIDTH < 400 ? WSAFE.x + 368 : WSAFE.x + WSAFE.w * 0.3;
+  const HOOP = { z: 400, y: 150, r: 44, tube: 2.5, net: 48, slideAfter: 3, slideAmp: SIDE ? FLAT_SLIDE : 55, slideSpeed: 0.9, ramp: 1.5 };
   const BOARD = { z: 456, w: 150, y0: 140, y1: 236 };
   const WALL_Z = 600;
   const FLIGHT_T = 0.9;                 // seconds from release to rim height on a perfect flick
   const BOUNCE = { rim: 0.55, board: 0.6, floor: 0.55, wall: 0.5 };
-  // Strip side view (y down): ball on the left, hoop ~300 units to its right.
   const FLAT = {
-    floor: 170, r: 14, startX: WSAFE.x + WSAFE.w * 0.3, startY: 136, rimY: 92, rimR: 30, gap: 300,
+    floor: 170, r: 14, startX: FLAT_START, startY: 136, rimY: 92, rimR: 30, gap: FLAT_GAP,
     net: 30, boardGap: 6, boardTop: 44, boardBottom: 104, gravity: 620, refAngle: (54 * Math.PI) / 180
   };
   // Intentional assist, disclosed: a flick whose power and aim land within
@@ -248,7 +274,9 @@
   const RESPAWN = 0.28;
   const DEMO_EVERY = 1.4;
   const WIN_DELAY = 0.9;
-  const TEXT = Math.max(9, 7 * K);       // canvas text never under 7 served px
+  // Canvas text never under 7 shown px (8 in the roomier tall strips), also
+  // when the page scales the layout down (Small Square, Mobile Leaderboard).
+  const TEXT = Math.max(9, ((TALL ? 8 : 7) * WK) / Math.min(1, K));
 
   const proj = (x, y, z) => {
     const s = VIEW.focal / (VIEW.focal + z);
@@ -256,8 +284,8 @@
   };
 
   // Effects live in served pixels.
-  const fxBurst = (x, y, color, count, speed) => burst(x / K, y / K, color, count, speed / Math.sqrt(K));
-  const fxText = (x, y, text, color) => floatText(x / K, y / K, text, color);
+  const fxBurst = (x, y, color, count, speed) => burst(x / WK, y / WK, color, count, speed / Math.sqrt(WK));
+  const fxText = (x, y, text, color) => floatText(x / WK, y / WK, text, color);
 
   const newBall = () => ({
     x: SIDE ? FLAT.startX : START.x, y: SIDE ? FLAT.startY : START.y, z: START.z,
@@ -316,7 +344,7 @@
     layer.width = Math.round(WIDTH * DPR);
     layer.height = Math.round(HEIGHT * DPR);
     const lctx = layer.getContext("2d");
-    lctx.setTransform(DPR / K, 0, 0, DPR / K, 0, 0);
+    lctx.setTransform(DPR / WK, 0, 0, DPR / WK, 0, 0);
     paint(lctx);
     return layer;
   };
@@ -397,9 +425,11 @@
       c.font = font(7);
       c.textAlign = "center";
       c.textBaseline = "middle";
-      // Kept clear of the middle, where the net hangs in front of the banner.
-      c.fillText("PULSE P2  ·  EARBUDS", 64, floorY - 7);
-      c.fillText("HEAR EVERY SWISH", 236, floorY - 7);
+      // Kept clear of the middle, where the net hangs in front of the banner
+      // (64 / 236 in the 300-wide world, 46 / 204 in the square's 250).
+      const side = 64 - (300 - WW) * 0.36;
+      c.fillText("PULSE P2  ·  EARBUDS", side, floorY - 7);
+      c.fillText("HEAR EVERY SWISH", WW - side, floorY - 7);
     } else {
       // The rail's tall wall has room for a scoreboard-style panel.
       paintPanel(c, 16, WSAFE.y + 18, WW - 16, WSAFE.y + 82, 22, 14);
@@ -1012,7 +1042,10 @@
       ], "#ffffff", 2.2);
     }
     ctx.globalAlpha = 1;
-    if (SIDE) {
+    if (TALL) {
+      // The tall strips have no room beside the ball, but plenty above it.
+      label("FLICK TOWARD THE HOOP", base.x - FLAT.r - 12, base.y - 54, "left");
+    } else if (SIDE) {
       label("FLICK TOWARD THE HOOP", base.x - FLAT.r - 18, base.y - 6, "right");
     } else {
       label("FLICK UP", base.x, base.y - 34 - (TEXT - 9));
@@ -1142,7 +1175,7 @@
 
   const draw = (time) => {
     ctx.save();
-    ctx.scale(1 / K, 1 / K);
+    ctx.scale(1 / WK, 1 / WK);
     ctx.drawImage(bgLayer, 0, 0, WW, WH);
     if (SIDE) {
       drawFlatScene(time);
@@ -1166,7 +1199,7 @@
     : { ArrowLeft: "left", ArrowRight: "right" };
 
   // Pointer hooks get served pixels; flicks are measured in world units.
-  const toWorld = (point) => ({ x: point.x * K, y: point.y * K });
+  const toWorld = (point) => ({ x: point.x * WK, y: point.y * WK });
 
   const onPointerDown = (served) => {
     if (game.ball.state === "fly" || game.winT > 0) {

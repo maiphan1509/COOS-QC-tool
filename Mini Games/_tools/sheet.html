@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mini Games — layout sheet</title>
+  <!--
+    Dev tool: every format of one game side by side, in one state, to check
+    layouts. Serve over http (see README), then open e.g.
+      _tools/sheet.html?game=mine-sweep&state=play&zoom=1
+    game   slug from manifest.js (default: first game)
+    state  intro | play | end | lose      (default: intro)
+    zoom   scale of the shown size        (default: 1)
+    only   comma list of format codes or "iab" for the IAB sizes only
+  -->
+  <style>
+    body { margin: 16px; background: #1b1f27; color: #dfe6f2; font: 12px/1.4 Arial, Helvetica, sans-serif; }
+    h1 { margin: 0 0 12px; font-size: 15px; }
+    .grid { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 18px; }
+    figure { margin: 0; }
+    figcaption { margin: 0 0 4px; color: #9fb0c8; white-space: nowrap; }
+    .frame { position: relative; overflow: hidden; outline: 1px dashed #4a5568; }
+    iframe { position: absolute; top: 0; left: 0; border: 0; transform-origin: 0 0; }
+  </style>
+  <script src="manifest.js"></script>
+</head>
+<body>
+  <h1 id="heading"></h1>
+  <div class="grid" id="grid"></div>
+  <script>
+    (() => {
+      const params = new URLSearchParams(location.search);
+      const games = window.MINI_GAMES || [];
+      const game = games.find((g) => g.slug === params.get("game")) || games[0];
+      const state = params.get("state") || "intro";
+      const zoom = Number(params.get("zoom")) || 1;
+      const only = (params.get("only") || "").split(",").filter(Boolean);
+      const iab = (f) => f.dw === f.w && f.dh === f.h && !/^(PB|SR|BT|CF)-/.test(f.code);
+      const formats = game.formats.filter((f) => !only.length || only.includes(f.code) || (only.includes("iab") && iab(f)));
+      document.getElementById("heading").textContent = `${game.number} · ${game.title} — ${state} — zoom ${zoom}`;
+      const grid = document.getElementById("grid");
+      formats.forEach((f) => {
+        const shown = f.dw / f.w;
+        const figure = document.createElement("figure");
+        const caption = document.createElement("figcaption");
+        caption.textContent = `${f.code} · ${f.label} · layout ${f.sw}x${f.sh} · k ${f.k.toFixed(3)}`;
+        const frame = document.createElement("div");
+        frame.className = "frame";
+        frame.style.width = `${f.dw * zoom}px`;
+        frame.style.height = `${f.dh * zoom}px`;
+        const iframe = document.createElement("iframe");
+        iframe.width = f.w;
+        iframe.height = f.h;
+        iframe.style.transform = `scale(${shown * zoom})`;
+        iframe.src = `../${f.path.split("/").map(encodeURIComponent).join("/")}?v=${Date.now()}`;
+        iframe.addEventListener("load", () => {
+          const win = iframe.contentWindow;
+          const api = Object.keys(win).map((key) => win[key]).find((v) => v && typeof v.start === "function" && typeof v.end === "function");
+          if (!api || state === "intro") {
+            return;
+          }
+          api.start();
+          if (state === "end" || state === "lose") {
+            api.end(state === "end");
+          }
+        });
+        frame.appendChild(iframe);
+        figure.append(caption, frame);
+        grid.appendChild(figure);
+      });
+    })();
+  </script>
+</body>
+</html>
