@@ -70,10 +70,17 @@
   };
 
   const FORMAT = FORMATS[ad.dataset.format] ? ad.dataset.format : "popup";
-  const WIDTH = FORMATS[FORMAT].width;
-  const HEIGHT = FORMATS[FORMAT].height;
-  const K = FORMATS[FORMAT].k;
+  // The IAB sizes (Square, Half Page, Billboard...) reuse one of the three
+  // families at another layout size: build.py writes it on #ad as
+  // data-layout="<width>x<height>" plus data-k. SAFE stretches with it, so
+  // lay the game out from WIDTH / HEIGHT / SAFE rather than fixed numbers.
+  const AD_LAYOUT = String(ad.dataset.layout || "").split("x").map(Number);
+  const WIDTH = AD_LAYOUT[0] > 0 ? AD_LAYOUT[0] : FORMATS[FORMAT].width;
+  const HEIGHT = AD_LAYOUT[1] > 0 ? AD_LAYOUT[1] : FORMATS[FORMAT].height;
+  const K = Number(ad.dataset.k) > 0 ? Number(ad.dataset.k) : FORMATS[FORMAT].k;
   const SAFE = { ...FORMATS[FORMAT].safe };
+  SAFE.w = WIDTH - SAFE.x;
+  SAFE.h = HEIGHT - SAFE.y;
 
   // The sticky-bottom variant keeps its close button clear of play.
   if (closeButton) {
@@ -208,23 +215,39 @@
 
   // Per-format board: popup 20x15, a tall 9x19 column for the rail and a wide
   // 36x5 corridor for the strip. Step times are s per cell (faster per bite).
-  const LAYOUT = {
-    popup: {
-      cell: 14, cols: 20, rows: 15, start: { x: 6, y: 7, dir: "right" },
+  // The grid follows SAFE so the IAB layouts get a board of their own while
+  // the native sizes keep exactly those grids: the 300x300 popup grows to
+  // 20x18, the 120-wide rail to 11x19, the 340-wide strip narrows to 28x5 and
+  // the 100 px tall strips (388x100, 320x100) switch to 12 px cells, 25x7 / 19x7.
+  const TALL_STRIP = FORMAT === "strip" && SAFE.h >= 80;
+  const LAYOUT = (() => {
+    if (FORMAT === "rail") {
+      const cols = Math.floor((SAFE.w - 10) / 10);
+      return {
+        cell: 10, cols, rows: 19, start: { x: Math.floor(cols / 2), y: 13, dir: "up" },
+        step: { start: 0.17, min: 0.1, drop: 0.005 }, swipe: 12,
+        hint: "SWIPE TO TURN", hintFont: 7.5
+      };
+    }
+    if (FORMAT === "strip") {
+      const cell = TALL_STRIP ? 12 : 9;
+      const rows = Math.floor((SAFE.h - 8) / cell);
+      const cols = Math.min(36, Math.floor((SAFE.w - 20) / cell));
+      return {
+        // Shorter boards start the snake further left, so the first wall is
+        // still a couple of seconds away.
+        cell, cols, rows, start: { x: Math.min(6, Math.floor(cols / 5)), y: Math.floor(rows / 2), dir: "right" },
+        step: { start: 0.13, min: 0.08, drop: 0.004 }, swipe: TALL_STRIP ? 12 : 10,
+        hint: "SWIPE · ARROWS · TAP ABOVE / BELOW", hintFont: TALL_STRIP ? 8.5 : 7.5
+      };
+    }
+    const rows = Math.floor((SAFE.h - 16) / 14);
+    return {
+      cell: 14, cols: 20, rows, start: { x: 6, y: Math.floor(rows / 2), dir: "right" },
       step: { start: 0.16, min: 0.095, drop: 0.005 }, swipe: 16,
       hint: "SWIPE · ARROWS · TAP A SIDE TO TURN", hintFont: 9
-    },
-    rail: {
-      cell: 10, cols: 9, rows: 19, start: { x: 4, y: 13, dir: "up" },
-      step: { start: 0.17, min: 0.1, drop: 0.005 }, swipe: 12,
-      hint: "SWIPE TO TURN", hintFont: 7.5
-    },
-    strip: {
-      cell: 9, cols: 36, rows: 5, start: { x: 6, y: 2, dir: "right" },
-      step: { start: 0.13, min: 0.08, drop: 0.004 }, swipe: 10,
-      hint: "SWIPE · ARROWS · TAP ABOVE / BELOW", hintFont: 7.5
-    }
-  }[FORMAT];
+    };
+  })();
 
   const TAU = Math.PI * 2;
   const CELL = LAYOUT.cell;

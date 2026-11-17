@@ -75,10 +75,17 @@
   };
 
   const FORMAT = FORMATS[ad.dataset.format] ? ad.dataset.format : "popup";
-  const WIDTH = FORMATS[FORMAT].width;
-  const HEIGHT = FORMATS[FORMAT].height;
-  const K = FORMATS[FORMAT].k;
+  // The IAB sizes (Square, Half Page, Billboard...) reuse one of the three
+  // families at another layout size: build.py writes it on #ad as
+  // data-layout="<width>x<height>" plus data-k. SAFE stretches with it, so
+  // lay the game out from WIDTH / HEIGHT / SAFE rather than fixed numbers.
+  const AD_LAYOUT = String(ad.dataset.layout || "").split("x").map(Number);
+  const WIDTH = AD_LAYOUT[0] > 0 ? AD_LAYOUT[0] : FORMATS[FORMAT].width;
+  const HEIGHT = AD_LAYOUT[1] > 0 ? AD_LAYOUT[1] : FORMATS[FORMAT].height;
+  const K = Number(ad.dataset.k) > 0 ? Number(ad.dataset.k) : FORMATS[FORMAT].k;
   const SAFE = { ...FORMATS[FORMAT].safe };
+  SAFE.w = WIDTH - SAFE.x;
+  SAFE.h = HEIGHT - SAFE.y;
 
   // The sticky-bottom variant keeps its close button clear of play.
   if (closeButton) {
@@ -213,12 +220,17 @@
   // the ground, the tower and each other, then sleep again once still. That
   // keeps an untouched tower perfectly still and the debris believable.
 
-  // World units are the creative's authored pixels (300x250, 200x480,
-  // 1456x180). Drawing is scaled by 1/K, so the scene keeps one physical size
-  // in every format and the physics below is tuned once, in world units.
-  const WW = WIDTH * K;
-  const WH = HEIGHT * K;
-  const WSAFE = { x: SAFE.x * K, y: SAFE.y * K, w: SAFE.w * K, h: SAFE.h * K };
+  // World units are the native creatives' authored pixels (300x250, 200x480,
+  // 1456x180). Drawing is scaled by 1/WK, so the scene keeps one physical
+  // size in every format and the physics below is tuned once, in world units.
+  // WK is the family's world scale, not the IAB page scale K: popup 1, rail
+  // 2, and the strip is always 180 units tall (1456/430 in the 53 px strips,
+  // 1.8 in the 100 px tall ones, whose bigger sprites fill the height).
+  const WK = FORMAT === "popup" ? 1 : FORMAT === "rail" ? 2 : HEIGHT < 60 ? 1456 / 430 : 180 / HEIGHT;
+  const TALL = FORMAT === "strip" && HEIGHT >= 60;
+  const WW = WIDTH * WK;
+  const WH = HEIGHT * WK;
+  const WSAFE = { x: SAFE.x * WK, y: SAFE.y * WK, w: SAFE.w * WK, h: SAFE.h * WK };
 
   const TAU = Math.PI * 2;
   const STEP = 1 / 120;                 // fixed physics step
@@ -233,10 +245,28 @@
   // under its top edge), and where the fort goes. Ball mass drops as launch
   // speed rises so hits land alike. The rail's steep shots are the hardest to
   // judge, so it gets a wider bot hit pad, softer falls and a fourth shot.
+  // Other layout sizes: the square popup (300 tall) drops the ground by its
+  // extra height and adds a lookout to the fort; the wider rail (120) spreads
+  // sling, cliff and fort across the extra width; the narrow strip keeps the
+  // 620-unit throw (it still fits); the tall strips (100 high, ~580 / ~460
+  // units of play width) bring the fort in and lower the band's power to
+  // the shorter throw. Mass follows power as above.
+  const RAIL_EXTRA = FORMAT === "rail" ? WW - 200 : 0;
+  const TALL_SLING = WSAFE.x + 62;
+  const TALL_FORT = WSAFE.x + WSAFE.w - 108;
+  // Band power for the tall strips: a full pull (46 units) at the best angle
+  // reaches the top bot (35 units above the band, ~32 units of pull behind
+  // the sling) with the same 13% spare speed² as the native strip's 10.5.
+  const TALL_POWER = Math.sqrt(1.13 * GRAVITY * (35 + Math.hypot(TALL_FORT - TALL_SLING + 32, 35))) / 46;
   const LAYOUT = {
-    popup: { ground: 222, slingX: 50, power: 6.8, mass: 4, maxSpeed: 520, aim: 0.68, preview: 0.55, fortX: 222, hut: true },
-    rail: { ground: 455, slingX: 46, power: 9, mass: 3, maxSpeed: 560, aim: 1.15, keyPower: 0.85, preview: 0.55, fortX: 142, ledge: { x: 88, top: 335 }, fallKill: 55, hitPad: 6, shots: 4 },
-    strip: { ground: 168, slingX: WSAFE.x + WSAFE.w * 0.16, power: 10.5, mass: 2.8, maxSpeed: 640, aim: 0.6, preview: 0.5, fortX: WSAFE.x + WSAFE.w * 0.16 + 620, hut: true }
+    popup: { ground: 222 + (WH - 250), slingX: 50, power: 6.8, mass: 4, maxSpeed: 520, aim: 0.68, preview: 0.55, fortX: 222, hut: true, spire: WH > 250 },
+    rail: {
+      ground: 455, slingX: 46 + RAIL_EXTRA * 0.3, power: 9, mass: 3, maxSpeed: 560, aim: 1.15, keyPower: 0.85, preview: 0.55,
+      fortX: 142 + RAIL_EXTRA * 0.65, ledge: { x: 88 + RAIL_EXTRA * 0.5, top: 335 }, fallKill: 55, hitPad: 6, shots: 4
+    },
+    strip: TALL
+      ? { ground: 168, slingX: TALL_SLING, power: TALL_POWER, mass: (2.8 * 10.5) / TALL_POWER, maxSpeed: 640, aim: 0.6, preview: 0.5, fortX: TALL_FORT, hut: true }
+      : { ground: 168, slingX: WSAFE.x + WSAFE.w * 0.16, power: 10.5, mass: 2.8, maxSpeed: 640, aim: 0.6, preview: 0.5, fortX: WSAFE.x + WSAFE.w * 0.16 + 620, hut: true }
   }[FORMAT];
 
   const GROUND_Y = LAYOUT.ground;
@@ -271,7 +301,9 @@
   const KEY_AIM = { angle: LAYOUT.aim, power: LAYOUT.keyPower || 0.72, turn: 0.9, charge: 0.7, minAngle: 0.08, maxAngle: 1.4 };
   // Waiting critters: [x, lift] beside the slingshot, the fourth on top.
   const QUEUE = [[SLING.x - 23, 0], [SLING.x - 37, 0], [SLING.x - 30, 11]];
-  const HINT_FONT = Math.max(9, 7 * K);   // canvas text never under 7 served px
+  // Canvas text never under 7 shown px (8 in the roomier tall strips), also
+  // when the page scales the layout down (Small Square, Mobile Leaderboard).
+  const HINT_FONT = Math.max(9, ((TALL ? 8 : 7) * WK) / Math.min(1, K));
 
   // The fort, authored around x = 222 on a base at y = 222:
   // [material, centerX, centerY, width, height]. Every block rests exactly on
@@ -292,12 +324,18 @@
     ["wood", 292, 211, 8, 22],
     ["glass", 277, 197, 38, 6]
   ];
+  // The square popup's lookout on the glass roof: two posts and a cap.
+  const SPIRE = [
+    ["wood", 207, 105, 8, 26],
+    ["wood", 237, 105, 8, 26],
+    ["wood", 222, 89, 44, 6]
+  ];
   // Two bots in the tower; the third sits in the hut, or (on the rail, whose
   // ledge has no room for a hut) out on the cliff's lip in front of the tower.
   const shiftX = LAYOUT.fortX - 222;
   const shiftY = BASE_Y - 222;
   const FOE_SPOTS = [[222, 171], [222, 135], LAYOUT.hut ? [277, 213] : [LAYOUT.ledge.x + 11 - shiftX, 213]];
-  const LEVEL = (LAYOUT.hut ? TOWER.concat(HUT) : TOWER).map(([mat, x, y, w, h]) => [mat, x + shiftX, y + shiftY, w, h]);
+  const LEVEL = (LAYOUT.hut ? TOWER.concat(HUT) : TOWER).concat(LAYOUT.spire ? SPIRE : []).map(([mat, x, y, w, h]) => [mat, x + shiftX, y + shiftY, w, h]);
   if (LAYOUT.ledge) {
     // The rail's cliff: an unbreakable, immovable resting block.
     LEVEL.unshift(["rock", (LAYOUT.ledge.x + WW) / 2, (BASE_Y + GROUND_Y) / 2, WW - LAYOUT.ledge.x, GROUND_Y - BASE_Y]);
@@ -307,8 +345,8 @@
   const GROUND = { kind: "ground", x: WW / 2, y: GROUND_Y + 40, vx: 0, vy: 0, va: 0, a: 0, e: 0.2, state: "rest", dead: false };
 
   // Effects live in served pixels; the game speaks world units.
-  const fxBurst = (x, y, color, count, speed) => burst(x / K, y / K, color, count, speed / Math.sqrt(K));
-  const fxText = (x, y, text, color) => floatText(x / K, y / K, text, color);
+  const fxBurst = (x, y, color, count, speed) => burst(x / WK, y / WK, color, count, speed / Math.sqrt(WK));
+  const fxText = (x, y, text, color) => floatText(x / WK, y / WK, text, color);
 
   // Per-round state; resetGame() restores it.
   const freshState = () => ({
@@ -339,10 +377,10 @@
   // Sized and painted in world units.
   const makeLayer = (w, h, paint) => {
     const layer = document.createElement("canvas");
-    layer.width = Math.ceil((w / K) * DPR);
-    layer.height = Math.ceil((h / K) * DPR);
+    layer.width = Math.ceil((w / WK) * DPR);
+    layer.height = Math.ceil((h / WK) * DPR);
     const lctx = layer.getContext("2d");
-    lctx.setTransform(DPR / K, 0, 0, DPR / K, 0, 0);
+    lctx.setTransform(DPR / WK, 0, 0, DPR / WK, 0, 0);
     paint(lctx);
     return layer;
   };
@@ -479,12 +517,14 @@
 
   // Far clouds (small, slow) and near ones (bigger, faster) for parallax.
   const CLOUD_KINDS = [[54, 20, 0.6, 3], [70, 26, 0.92, 7]];
-  const cloudBand = FORMAT === "rail" ? [WSAFE.y + 20, 150] : FORMAT === "strip" ? [-4, 38] : [WSAFE.y + 6, 52];
-  game.clouds = Array.from({ length: FORMAT === "strip" ? 9 : 4 }, (_, index) => {
+  const cloudBand = FORMAT === "rail" ? [WSAFE.y + 20, 150] : FORMAT === "strip" ? [-4, 38] : [WSAFE.y + 6, 52 + (WH - 250) * 0.6];
+  // One cloud per ~160 units of strip (9 in the 1456-wide one).
+  const CLOUDS = FORMAT === "strip" ? Math.max(4, Math.round(WW / 160)) : 4;
+  game.clouds = Array.from({ length: CLOUDS }, (_, index) => {
     const [w, h, alpha, speed] = CLOUD_KINDS[index % 2];
     const scale = FORMAT === "strip" ? 0.8 : 1;
     return {
-      x: ((index + 0.3) * WW) / (FORMAT === "strip" ? 9 : 4) + (index % 3) * 14,
+      x: ((index + 0.3) * WW) / CLOUDS + (index % 3) * 14,
       y: cloudBand[0] + (((index * 37) % 10) / 10) * cloudBand[1],
       w: w * scale - (index % 3) * 4,
       h: h * scale - (index % 3) * 1.5,
@@ -1465,8 +1505,8 @@
     strokePath([[SLING.x - 12, SLING.y + 6], [SLING.x - 29, SLING.y + 19]], "#ffffff", 2);
     strokePath([[SLING.x - 29, SLING.y + 13], [SLING.x - 30, SLING.y + 20], [SLING.x - 23, SLING.y + 21]], "#ffffff", 2);
     ctx.globalAlpha = 1;
-    // The strip is too short for a label above the sling: put it beside.
-    const side = FORMAT === "strip";
+    // The 53 px strip is too short for a label above the sling: put it beside.
+    const side = FORMAT === "strip" && !TALL;
     const tx = side ? SLING.x + 22 : SLING.x;
     const ty = side ? SLING.y - 30 : SLING.y - 14 - HINT_FONT;
     ctx.font = `900 ${HINT_FONT}px Arial, Helvetica, sans-serif`;
@@ -1480,7 +1520,7 @@
 
   const draw = (time) => {
     ctx.save();
-    ctx.scale(1 / K, 1 / K);
+    ctx.scale(1 / WK, 1 / WK);
     ctx.drawImage(skyLayer, 0, 0, WW, WH);
     drawCloudLayer(0);
     drawCloudLayer(1);
@@ -1549,7 +1589,7 @@
   const KEYS = { ArrowLeft: "left", ArrowRight: "right", ArrowUp: "up", ArrowDown: "down" };
 
   // Pointer hooks get served pixels; the game works in world units.
-  const toWorld = (point) => ({ x: point.x * K, y: point.y * K });
+  const toWorld = (point) => ({ x: point.x * WK, y: point.y * WK });
 
   // Generous drag zones: the whole slingshot side of the stage.
   const inDragZone = (p) => (FORMAT === "rail"

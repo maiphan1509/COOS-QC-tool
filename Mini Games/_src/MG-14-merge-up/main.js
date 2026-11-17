@@ -69,10 +69,17 @@
   };
 
   const FORMAT = FORMATS[ad.dataset.format] ? ad.dataset.format : "popup";
-  const WIDTH = FORMATS[FORMAT].width;
-  const HEIGHT = FORMATS[FORMAT].height;
-  const K = FORMATS[FORMAT].k;
+  // The IAB sizes (Square, Half Page, Billboard...) reuse one of the three
+  // families at another layout size: build.py writes it on #ad as
+  // data-layout="<width>x<height>" plus data-k. SAFE stretches with it, so
+  // lay the game out from WIDTH / HEIGHT / SAFE rather than fixed numbers.
+  const AD_LAYOUT = String(ad.dataset.layout || "").split("x").map(Number);
+  const WIDTH = AD_LAYOUT[0] > 0 ? AD_LAYOUT[0] : FORMATS[FORMAT].width;
+  const HEIGHT = AD_LAYOUT[1] > 0 ? AD_LAYOUT[1] : FORMATS[FORMAT].height;
+  const K = Number(ad.dataset.k) > 0 ? Number(ad.dataset.k) : FORMATS[FORMAT].k;
   const SAFE = { ...FORMATS[FORMAT].safe };
+  SAFE.w = WIDTH - SAFE.x;
+  SAFE.h = HEIGHT - SAFE.y;
 
   // The sticky-bottom variant keeps its close button clear of play.
   if (closeButton) {
@@ -201,10 +208,20 @@
   /* --------------------------------------------------------------------- GAME */
 
   // The strip is too short for a 4x4 board, so it plays on a 2x8 one.
+  // The IAB layouts reshape the native boards: the Square (popup 300x300)
+  // adds a fifth row, the Half Page (rail 120 wide) grows the tiles, the
+  // Mobile Leaderboard's narrower strip keeps 2x8 on smaller tiles, and the
+  // 100-tall strips (Billboard, Large Mobile Banner) play four rows of five.
+  const TALL = FORMAT === "strip" && HEIGHT > 80;
+  const NARROW = FORMAT === "strip" && !TALL && SAFE.w < 340;   // Mobile Leaderboard (274 vs 364 / 346)
+  const POP_DY = FORMAT === "popup" ? HEIGHT - 250 : 0;         // extra popup height (Square: 50)
+  const RAIL_DX = FORMAT === "rail" ? WIDTH - 100 : 0;          // extra rail width (Half Page: 20)
   const GRIDS = {
-    popup: { rows: 4, cols: 4, cell: 44, gap: 6 },
-    rail: { rows: 4, cols: 4, cell: 20, gap: 3 },
-    strip: { rows: 2, cols: 8, cell: 22, gap: 3 }
+    popup: { rows: POP_DY >= 50 ? 5 : 4, cols: 4, cell: 44, gap: 6 },
+    rail: { rows: 4, cols: 4, cell: 20 + RAIL_DX * 0.1, gap: 3 },
+    strip: TALL
+      ? { rows: 4, cols: 5, cell: 20, gap: 3 }
+      : { rows: 2, cols: 8, cell: NARROW ? 20 : 22, gap: 3 }
   };
 
   const ROWS = GRIDS[FORMAT].rows;
@@ -221,36 +238,59 @@
 
   // Goal tile, progress, points and the swipe hint: a column beside the board
   // in the popup, stacked under it in the rail, in a row after it in the strip.
+  // The tall strip spreads goal, points and hint as three columns (a little
+  // smaller in the Large Mobile Banner than in the Billboard); the Mobile
+  // Leaderboard drops the hint to fit. The Square and Half Page offsets
+  // below are 0 at the native sizes.
+  const TALL_X0 = BOARD.x + BOARD.w + 10;
+  const TALL_PW = SAFE.x + SAFE.w - 6 - TALL_X0;
+  const ROOMY = TALL && TALL_PW >= 150;
   const PANEL = (() => {
     if (FORMAT === "popup") {
       const x = BOARD.x + BOARD.w + 8;
       const cx = x + (WIDTH - x - 8) / 2;
+      const dy = BOARD.h - 206;   // the Square's fifth row: 50
       return {
-        goalLabel: { x: cx, y: 42 }, goal: { x: cx, y: 70, size: 40 },
-        bar: { x: x + 4, y: 97, w: WIDTH - x - 16 },
-        pointsLabel: { x: cx, y: 124 }, points: { x: cx, y: 140 },
-        hint: { x: cx, y: 186, arm: 16, scale: 1 }, hintLabel: { x: cx, y: 220 }
+        goalLabel: { x: cx, y: 42 + dy * 0.2 }, goal: { x: cx, y: 70 + dy * 0.2, size: 40 },
+        bar: { x: x + 4, y: 97 + dy * 0.2, w: WIDTH - x - 16 },
+        pointsLabel: { x: cx, y: 124 + dy * 0.5 }, points: { x: cx, y: 140 + dy * 0.5 },
+        hint: { x: cx, y: 186 + dy * 0.8, arm: 16, scale: 1 }, hintLabel: { x: cx, y: 220 + dy * 0.8 }
       };
     }
     if (FORMAT === "rail") {
       const top = BOARD.y + BOARD.h;
+      const dx = RAIL_DX;
       return {
-        goalLabel: { x: 50, y: top + 11 }, goal: { x: 50, y: top + 31, size: 26 },
-        bar: { x: 22, y: top + 50, w: 56 },
-        pointsLabel: { x: 30, y: top + 67 }, points: { x: 30, y: top + 80 },
-        hint: { x: 72, y: top + 74, arm: 9, scale: 0.7 }, hintLabel: null
+        goalLabel: { x: 50 + dx / 2, y: top + 11 }, goal: { x: 50 + dx / 2, y: top + 31, size: 26 },
+        bar: { x: 22 + dx * 0.35, y: top + 50, w: 56 + dx * 0.3 },
+        pointsLabel: { x: 30 + dx * 0.3, y: top + 67 }, points: { x: 30 + dx * 0.3, y: top + 80 },
+        hint: { x: 72 + dx * 0.6, y: top + 74, arm: 9, scale: 0.7 }, hintLabel: null
+      };
+    }
+    if (TALL) {
+      const col = (index) => TALL_X0 + (TALL_PW * (2 * index + 1)) / 6;
+      const cy = HEIGHT / 2;
+      const goal = ROOMY ? 32 : 28;
+      return {
+        goalLabel: { x: col(0), y: cy - 28 }, goal: { x: col(0), y: cy - 2, size: goal },
+        bar: { x: col(0) - goal / 2, y: cy + 21, w: goal },
+        pointsLabel: { x: col(1), y: cy - 9 }, points: { x: col(1), y: cy + 8 },
+        hint: { x: col(2), y: cy - 4, arm: ROOMY ? 13 : 11, scale: ROOMY ? 0.9 : 0.8 }, hintLabel: { x: col(2), y: cy + 28 }
       };
     }
     const x = BOARD.x + BOARD.w + 10;
     return {
       goalLabel: { x: x + 14, y: 8 }, goal: { x: x + 14, y: 27, size: 24 },
       bar: { x: x + 2, y: 44, w: 24 },
-      pointsLabel: { x: x + 56, y: 19 }, points: { x: x + 56, y: 33 },
-      hint: { x: x + 104, y: 27, arm: 10, scale: 0.75 }, hintLabel: null
+      pointsLabel: { x: x + (NARROW ? 50 : 56), y: 19 }, points: { x: x + (NARROW ? 50 : 56), y: 33 },
+      hint: NARROW ? null : { x: x + 104, y: 27, arm: 10, scale: 0.75 }, hintLabel: null
     };
   })();
 
-  const FONT = { label: COMPACT ? 7 : 9, points: COMPACT ? 11 : 16 };
+  const FONT = {
+    label: ROOMY ? 8 : COMPACT ? 7 : 9,
+    points: TALL ? (ROOMY ? 15 : 13) : COMPACT ? 11 : 16
+  };
 
   const SLIDE_TIME = 0.11;
   const POP_TIME = 0.2;
@@ -262,8 +302,9 @@
 
   // A head start so 128 is ~30 moves away instead of ~60: the board opens
   // with a 32, an 8, a 4 and two 2s. The 2x8 strip board merges more slowly,
-  // so it also starts with a 16.
-  const SEED_TILES = FORMAT === "strip" ? [32, 16, 8, 2, 2] : [32, 8, 4, 2, 2];
+  // and the 20-cell boards (Square, tall strip) collect more stray small
+  // tiles, so they also start with a 16.
+  const SEED_TILES = ROWS === 2 || ROWS * COLS > 16 ? [32, 16, 8, 2, 2] : [32, 8, 4, 2, 2];
 
   const DIRS = {
     left: { dr: 0, dc: -1 },
@@ -659,7 +700,7 @@
     const steps = Math.log2(CONFIG.goal) - 1;
     const progress = clamp((Math.log2(Math.max(2, game.best)) - 1) / steps, 0, 1);
     const bar = PANEL.bar;
-    const barH = COMPACT ? 4 : 6;
+    const barH = TALL ? 5 : COMPACT ? 4 : 6;
     roundRect(ctx, bar.x, bar.y, bar.w, barH, barH / 2);
     ctx.fillStyle = "rgba(255, 255, 255, 0.1)";
     ctx.fill();
@@ -677,15 +718,17 @@
     ctx.fillText(String(game.points), PANEL.points.x, PANEL.points.y);
 
     const hint = PANEL.hint;
-    const lit = Math.floor(game.clock * 2.5) % 4;
-    drawArrow(hint.x, hint.y - hint.arm, -Math.PI / 2, lit === 0, hint.scale);
-    drawArrow(hint.x + hint.arm, hint.y, 0, lit === 1, hint.scale);
-    drawArrow(hint.x, hint.y + hint.arm, Math.PI / 2, lit === 2, hint.scale);
-    drawArrow(hint.x - hint.arm, hint.y, Math.PI, lit === 3, hint.scale);
-    ctx.fillStyle = "rgba(236, 222, 255, 0.35)";
-    ctx.beginPath();
-    ctx.arc(hint.x, hint.y, 4 * hint.scale, 0, Math.PI * 2);
-    ctx.fill();
+    if (hint) {
+      const lit = Math.floor(game.clock * 2.5) % 4;
+      drawArrow(hint.x, hint.y - hint.arm, -Math.PI / 2, lit === 0, hint.scale);
+      drawArrow(hint.x + hint.arm, hint.y, 0, lit === 1, hint.scale);
+      drawArrow(hint.x, hint.y + hint.arm, Math.PI / 2, lit === 2, hint.scale);
+      drawArrow(hint.x - hint.arm, hint.y, Math.PI, lit === 3, hint.scale);
+      ctx.fillStyle = "rgba(236, 222, 255, 0.35)";
+      ctx.beginPath();
+      ctx.arc(hint.x, hint.y, 4 * hint.scale, 0, Math.PI * 2);
+      ctx.fill();
+    }
     if (PANEL.hintLabel) {
       ctx.fillStyle = PALETTE.dim;
       ctx.font = `800 ${FONT.label}px Arial, Helvetica, sans-serif`;

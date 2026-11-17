@@ -65,10 +65,17 @@
   };
 
   const FORMAT = FORMATS[ad.dataset.format] ? ad.dataset.format : "popup";
-  const WIDTH = FORMATS[FORMAT].width;
-  const HEIGHT = FORMATS[FORMAT].height;
-  const K = FORMATS[FORMAT].k;
+  // The IAB sizes (Square, Half Page, Billboard...) reuse one of the three
+  // families at another layout size: build.py writes it on #ad as
+  // data-layout="<width>x<height>" plus data-k. SAFE stretches with it, so
+  // lay the game out from WIDTH / HEIGHT / SAFE rather than fixed numbers.
+  const AD_LAYOUT = String(ad.dataset.layout || "").split("x").map(Number);
+  const WIDTH = AD_LAYOUT[0] > 0 ? AD_LAYOUT[0] : FORMATS[FORMAT].width;
+  const HEIGHT = AD_LAYOUT[1] > 0 ? AD_LAYOUT[1] : FORMATS[FORMAT].height;
+  const K = Number(ad.dataset.k) > 0 ? Number(ad.dataset.k) : FORMATS[FORMAT].k;
   const SAFE = { ...FORMATS[FORMAT].safe };
+  SAFE.w = WIDTH - SAFE.x;
+  SAFE.h = HEIGHT - SAFE.y;
 
   // The sticky-bottom variant keeps its close button clear of play.
   if (closeButton) {
@@ -201,11 +208,35 @@
   // and the input hooks. The shell above and below stays the same per game.
   // Lay out from SAFE / WIDTH / HEIGHT so the game fits every FORMAT.
 
-  // Grid, moves and win target per format.
+  // Grid, moves and win target per layout. The native sizes (popup 300x250,
+  // rail 100x240, strip 430x53) keep their tuned grids; the IAB layouts
+  // reshape it: the Square (popup 300x300) adds two rows, the Half Page
+  // (rail 120 wide) a column, the Mobile Leaderboard's narrower strip fits
+  // fewer columns and the 100-tall strips (Billboard, Large Mobile Banner)
+  // play five rows of bigger gems. Each goal sits where the natives' do:
+  // near the score that playing a random valid move every turn reaches
+  // three times in four (simulated, 200 sessions per layout).
+  const TALL = FORMAT === "strip" && HEIGHT > 80;
+  const POP_DY = FORMAT === "popup" ? HEIGHT - 250 : 0;   // extra popup height (Square: 50)
+  const RAIL_DX = FORMAT === "rail" ? WIDTH - 100 : 0;    // extra rail width (Half Page: 20)
+  const STRIP_PANEL = TALL ? 72 : 75;                     // least panel width after the grid
+  const stripCols = (cell) => Math.min(16, Math.floor((SAFE.w - 5 - 7 - 3 - STRIP_PANEL) / cell));
   const LAYOUT = {
-    popup: { cols: 7, rows: 7, cell: 29, moves: 15, goal: 800, time: 60000 },
-    rail: { cols: 6, rows: 9, cell: 15, moves: 15, goal: 850, time: 55000 },
-    strip: { cols: 16, rows: 3, cell: 16, moves: 15, goal: 600, time: 55000 }
+    popup: POP_DY >= 50
+      ? { cols: 7, rows: 9, cell: 29, moves: 15, goal: 900, time: 60000 }
+      : { cols: 7, rows: 7, cell: 29, moves: 15, goal: 800, time: 60000 },
+    rail: RAIL_DX >= 20
+      ? { cols: 7, rows: 9, cell: 15, moves: 15, goal: 950, time: 55000 }
+      : { cols: 6, rows: 9, cell: 15, moves: 15, goal: 850, time: 55000 },
+    strip: TALL
+      ? (() => {
+        const cols = stripCols(18);
+        return { cols, rows: 5, cell: 18, moves: 15, goal: 750, time: 55000 };
+      })()
+      : (() => {
+        const cols = stripCols(16);
+        return { cols, rows: 3, cell: 16, moves: 15, goal: 600, time: 55000 };
+      })()
   }[FORMAT];
 
   CONFIG.goal = LAYOUT.goal;
@@ -233,24 +264,39 @@
   }[FORMAT];
   const PANEL_CX = PANEL.x + PANEL.w / 2;
 
+  // The popup column's rows, spread over the Square's taller panel (all 0
+  // at 300x250): brand, moves badge, score + goal bar, time.
+  const POP_ROWS = (() => {
+    const extra = FORMAT === "popup" ? GRID.h - 7 * CELL : 0;
+    return { brand: extra * 0.1, badge: extra * 0.33, score: extra * 0.55, time: extra * 0.78 };
+  })();
+
+  // The tall strip stacks the panel like the popup column: badge on top,
+  // goal bar under it.
   const BADGE = {
-    popup: { x: PANEL_CX, y: 86, r: 21, font: 20, labelY: 116 },
-    rail: { x: PANEL.x + 19, y: PANEL.y + PANEL.h / 2 - 5, r: 14, font: 12, labelY: PANEL.y + PANEL.h / 2 + 17 },
-    strip: { x: PANEL.x + 16, y: PANEL.y + 17, r: 13, font: 11, labelY: PANEL.y + 39 }
+    popup: { x: PANEL_CX, y: 86 + POP_ROWS.badge, r: 21, font: 20, labelY: 116 + POP_ROWS.badge },
+    rail: { x: PANEL.x + 19 + RAIL_DX * 0.25, y: PANEL.y + PANEL.h / 2 - 5, r: 14, font: 12, labelY: PANEL.y + PANEL.h / 2 + 17 },
+    strip: TALL
+      ? { x: PANEL_CX, y: PANEL.y + 27, r: 17, font: 15, labelY: PANEL.y + 53 }
+      : { x: PANEL.x + 16, y: PANEL.y + 17, r: 13, font: 11, labelY: PANEL.y + 39 }
   }[FORMAT];
 
   const BAR = {
-    popup: { x: PANEL.x + 9, y: 156, w: PANEL.w - 18, h: 8 },
-    rail: { x: PANEL.x + 42, y: BADGE.y - 3, w: PANEL.w - 46, h: 7 },
-    strip: { x: PANEL.x + 36, y: PANEL.y + 18, w: PANEL.w - 39, h: 6 }
+    popup: { x: PANEL.x + 9, y: 156 + POP_ROWS.score, w: PANEL.w - 18, h: 8 },
+    rail: { x: PANEL.x + 42 + RAIL_DX * 0.4, y: BADGE.y - 3, w: PANEL.w - 46 - RAIL_DX * 0.4, h: 7 },
+    strip: TALL
+      ? { x: PANEL.x + 9, y: PANEL.y + 71, w: PANEL.w - 18, h: 7 }
+      : { x: PANEL.x + 36, y: PANEL.y + 18, w: PANEL.w - 39, h: 6 }
   }[FORMAT];
 
-  const FONT = {
-    label: COMPACT ? 7 : 8,
-    points: COMPACT ? 9 : 12,
-    callout: COMPACT ? 12 : 18,
-    banner: COMPACT ? 11 : 16
-  };
+  const FONT = TALL
+    ? { label: 7, points: 10, callout: 14, banner: 13 }
+    : {
+      label: COMPACT ? 7 : 8,
+      points: COMPACT ? 9 : 12,
+      callout: COMPACT ? 12 : 18,
+      banner: COMPACT ? 11 : 16
+    };
 
   const TYPES = 6;
   const GEM_POINTS = 10;        // per gem, times the cascade level
@@ -756,11 +802,11 @@
     g.fill();
 
     if (FORMAT === "popup") {
-      label(g, "LYRAE", PANEL_CX, 37, 13, PALETTE.accent);
-      label(g, "RING 2", PANEL_CX, 49, 8, PALETTE.text);
-      label(g, "SCORE", PANEL_CX, 132, 8, PALETTE.textDim);
-      label(g, `GOAL ${CONFIG.goal}`, PANEL_CX, 174, 8, PALETTE.textDim);
-      label(g, "TIME", PANEL_CX, 196, 8, PALETTE.textDim);
+      label(g, "LYRAE", PANEL_CX, 37 + POP_ROWS.brand, 13, PALETTE.accent);
+      label(g, "RING 2", PANEL_CX, 49 + POP_ROWS.brand, 8, PALETTE.text);
+      label(g, "SCORE", PANEL_CX, 132 + POP_ROWS.score, 8, PALETTE.textDim);
+      label(g, `GOAL ${CONFIG.goal}`, PANEL_CX, 174 + POP_ROWS.score, 8, PALETTE.textDim);
+      label(g, "TIME", PANEL_CX, 196 + POP_ROWS.time, 8, PALETTE.textDim);
     } else {
       label(g, `GOAL ${CONFIG.goal}`, BAR.x + BAR.w / 2, BAR.y - 6, FONT.label, PALETTE.textDim);
     }
@@ -1275,10 +1321,10 @@
     if (FORMAT === "popup") {
       ctx.font = "900 14px Arial, Helvetica, sans-serif";
       ctx.fillStyle = PALETTE.text;
-      ctx.fillText(String(Shell.score), PANEL_CX, 145);
+      ctx.fillText(String(Shell.score), PANEL_CX, 145 + POP_ROWS.score);
       const remaining = Math.max(0, Math.ceil((CONFIG.maxPlayMs - (Shell.phase === "intro" ? 0 : Shell.elapsed)) / 1000));
       ctx.fillStyle = remaining <= 10 && Shell.phase === "play" ? PALETTE.bad : PALETTE.text;
-      ctx.fillText(String(remaining), PANEL_CX, 211);
+      ctx.fillText(String(remaining), PANEL_CX, 211 + POP_ROWS.time);
     } else {
       ctx.font = `900 ${FONT.label}px Arial, Helvetica, sans-serif`;
       ctx.fillStyle = PALETTE.text;

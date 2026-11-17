@@ -66,10 +66,17 @@
   };
 
   const FORMAT = FORMATS[ad.dataset.format] ? ad.dataset.format : "popup";
-  const WIDTH = FORMATS[FORMAT].width;
-  const HEIGHT = FORMATS[FORMAT].height;
-  const K = FORMATS[FORMAT].k;
+  // The IAB sizes (Square, Half Page, Billboard...) reuse one of the three
+  // families at another layout size: build.py writes it on #ad as
+  // data-layout="<width>x<height>" plus data-k. SAFE stretches with it, so
+  // lay the game out from WIDTH / HEIGHT / SAFE rather than fixed numbers.
+  const AD_LAYOUT = String(ad.dataset.layout || "").split("x").map(Number);
+  const WIDTH = AD_LAYOUT[0] > 0 ? AD_LAYOUT[0] : FORMATS[FORMAT].width;
+  const HEIGHT = AD_LAYOUT[1] > 0 ? AD_LAYOUT[1] : FORMATS[FORMAT].height;
+  const K = Number(ad.dataset.k) > 0 ? Number(ad.dataset.k) : FORMATS[FORMAT].k;
   const SAFE = { ...FORMATS[FORMAT].safe };
+  SAFE.w = WIDTH - SAFE.x;
+  SAFE.h = HEIGHT - SAFE.y;
 
   // The sticky-bottom variant keeps its close button clear of play.
   if (closeButton) {
@@ -205,10 +212,22 @@
   // Board, piece limits, drag lift and win target per format. The strip's
   // three rows make column clears cheap (so its goal sits higher) and jam
   // easily, so it deals only pieces of four cells or fewer.
+  //
+  // The IAB layouts resize the board instead of stretching it: the square
+  // popup (300x300) gains two rows, the wide rail (120x240) a column, the
+  // Mobile Leaderboard (340x53) drops to nine columns, and the 100-tall strips
+  // (Billboard 388x100, Large Mobile Banner 320x100) become six-row boards
+  // that deal the full piece set like the rail. Goals were re-balanced with a
+  // greedy-bot run of the dealer so each size wins about as often as its
+  // native family.
+  const TALL_STRIP = FORMAT === "strip" && HEIGHT > 80;
+  const WIDE_STRIP = WIDTH >= 380;
   const LAYOUT = {
-    popup: { cols: 8, rows: 8, cell: 25, maxLen: 5, maxCells: 9, trayCell: 12, lift: 34, liftZone: 64, clamp: "bottom", goal: 120, time: 50000 },
-    rail: { cols: 6, rows: 7, cell: 15, maxLen: 4, maxCells: 9, trayCell: 7, lift: 14, liftZone: 40, clamp: "none", goal: 120, time: 45000 },
-    strip: { cols: 12, rows: 3, cell: 16, maxLen: 5, maxCells: 4, trayCell: 8, lift: 8, liftZone: HEIGHT, clamp: "both", goal: 450, time: 45000 }
+    popup: { cols: 8, rows: 8 + Math.floor((HEIGHT - 250) / 25), cell: 25, maxLen: 5, maxCells: 9, trayCell: 12, lift: 34, liftZone: 64, clamp: "bottom", goal: HEIGHT >= 300 ? 130 : 120, time: 50000 },
+    rail: { cols: 6 + Math.floor((WIDTH - 100) / 15), rows: 7, cell: 15, maxLen: 4, maxCells: 9, trayCell: 7, lift: 14, liftZone: 40, clamp: "none", goal: 120, time: 45000 },
+    strip: TALL_STRIP
+      ? { cols: WIDE_STRIP ? 10 : 7, rows: 6, cell: 15, maxLen: WIDE_STRIP ? 5 : 4, maxCells: 9, trayCell: 11, lift: 12, liftZone: HEIGHT, clamp: "both", goal: WIDE_STRIP ? 130 : 120, time: 45000 }
+      : { cols: WIDTH >= 400 ? 12 : 9, rows: 3, cell: 16, maxLen: 5, maxCells: 4, trayCell: 8, lift: 8, liftZone: HEIGHT, clamp: "both", goal: WIDTH >= 400 ? 450 : 350, time: 45000 }
   }[FORMAT];
 
   CONFIG.goal = LAYOUT.goal;
@@ -230,7 +249,7 @@
   // Three piece slots: stacked beside the board in the popup, side by side
   // under it in the rail and after it in the strip.
   const TRAY = {
-    popup: { x: 214, y: 32, w: 80, h: 207, stacked: true },
+    popup: { x: 214, y: 32, w: 80, h: HEIGHT - 43, stacked: true },
     rail: { x: 3, y: BOARD.y + BOARD.h + 7, w: WIDTH - 6, h: HEIGHT - (BOARD.y + BOARD.h + 7) - 4, stacked: false },
     strip: { x: BOARD.x + BOARD.w + 8, y: 2, w: SAFE.x + SAFE.w - (BOARD.x + BOARD.w + 8) - 3, h: HEIGHT - 4, stacked: false }
   }[FORMAT];

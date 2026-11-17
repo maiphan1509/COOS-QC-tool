@@ -159,7 +159,9 @@
     <h1>Mini Games — Playable Ads</h1>
     <p class="lede">
       Every game ships in the same 4 formats as the samples: <code>PB-SM-300x250</code> (popup), <code>SR-LG-200x480</code> (side rail, shown at 100x240 on mobile),
-      <code>BT-LG-1456x180</code> (premium top banner) and <code>CF-LG-1456x180</code> (sticky bottom banner, with a close button), both shown at 430x53 on mobile.
+      <code>BT-LG-1456x180</code> (premium top banner) and <code>CF-LG-1456x180</code> (sticky bottom banner, with a close button), both shown at 430x53 on mobile,
+      plus 9 IAB sizes shown at their upload size: <code>MR-300x250</code>, <code>HP-300x600</code>, <code>SQ-300x300</code>, <code>SS-200x200</code>, <code>LR-336x280</code>,
+      <code>LB-728x90</code>, <code>BB-970x250</code>, <code>ML-320x50</code> and <code>LM-320x100</code>.
       Each folder holds only <code>index.html</code> + <code>main.js</code>, with its zip alongside. The line under each creative shows its latest event: <code>start / end / click / close</code>.
     </p>
 
@@ -181,10 +183,15 @@
       "use strict";
 
       const GAMES = window.MINI_GAMES || [];
-      const FORMAT_CODES = ["PB-SM-300x250", "SR-LG-200x480", "BT-LG-1456x180", "CF-LG-1456x180"];
+      // Format order and names come from build.py's FORMATS list.
+      const FORMAT_LIST = GAMES.length ? GAMES[0].formats.map(({ code, label }) => ({ code, label })) : [];
+      const FORMAT_CODES = FORMAT_LIST.map((item) => item.code);
+      // dw is the width people see: the mobile served width for the sample
+      // formats, the upload width for the IAB sizes.
+      const shown = (f) => (f.dw ? f.dw / f.w : 1 / f.k);
       const ZOOMS = [
-        { id: "served", label: "Served (mobile)", scale: (f) => 1 / f.k },
-        { id: "served2", label: "Served ×2", scale: (f) => 2 / f.k },
+        { id: "served", label: "Shown (mobile / display)", scale: (f) => shown(f) },
+        { id: "served2", label: "Shown ×2", scale: (f) => 2 * shown(f) },
         { id: "authored", label: "Authored (ad.size)", scale: () => 1 }
       ];
 
@@ -352,7 +359,7 @@
             writeHash();
           }
           document.getElementById("pickLabel").textContent = "Format";
-          fillBar("pickBar", FORMAT_CODES.map((code) => chip(code, code === state.pick, () => { state.pick = code; render(); })));
+          fillBar("pickBar", FORMAT_LIST.map(({ code, label }) => chip(`${code} ${label}`, code === state.pick, () => { state.pick = code; render(); })));
           GAMES.forEach((game) => {
             const format = game.formats.find((item) => item.code === state.pick);
             if (format) {

@@ -1,6 +1,6 @@
 # Mini Games — Playable Ads
 
-17 HTML5 mini games built as interactive ad creatives. Every game ships in the same 4 formats as the sample creatives in this workspace (Popup, Side Rail, Premium Top Banner, Sticky Bottom Banner): 68 creatives in total, each with a `.zip` next to its folder.
+17 HTML5 mini games built as interactive ad creatives. Every game ships in the same 4 formats as the sample creatives in this workspace (Popup, Side Rail, Premium Top Banner, Sticky Bottom Banner) plus 9 IAB sizes (Medium Rectangle, Half Page, Square, Small Square, Large Rectangle, Leaderboard, Billboard, Mobile Leaderboard, Large Mobile Banner): 13 formats, 221 creatives in total, each with a `.zip` next to its folder.
 
 Developed by Thanh Mai.
 
@@ -26,11 +26,11 @@ In the Claude desktop app you can also start the `mini-games` configuration from
 
 ## Gallery (`index.html`)
 
-- **View by → Game**: pick one game to see all 4 formats.
+- **View by → Game**: pick one game to see all 13 formats.
 - **View by → Format**: pick one format to see all 17 games.
 - **Size**:
-  - *Served (mobile)*: the size people actually see on a phone.
-  - *Served ×2*: twice that size, easier to play with a mouse.
+  - *Shown (mobile / display)*: the size people actually see: on a phone for the 4 sample formats, the upload size for the IAB sizes.
+  - *Shown ×2*: twice that size, easier to play with a mouse.
   - *Authored (ad.size)*: the creative's real size.
 - **clickTag**: type a URL, then press *Reload all* to test click-through.
 - **Buttons under each creative**:
@@ -51,11 +51,21 @@ Mini Games/
 ├── Side Rail/                  SR-LG-200x480-<nn>-<game>-interactive/ + .zip
 ├── Premium Top Banner/         BT-LG-1456x180-<nn>-<game>-interactive/ + .zip
 ├── Sticky Bottom Banner/       CF-LG-1456x180-<nn>-<game>-interactive/ + .zip
+├── Medium Rectangle/           MR-300x250-<nn>-<game>-interactive/ + .zip
+├── Half Page/                  HP-300x600-<nn>-<game>-interactive/ + .zip
+├── Square/                     SQ-300x300-<nn>-<game>-interactive/ + .zip
+├── Small Square/               SS-200x200-<nn>-<game>-interactive/ + .zip
+├── Large Rectangle/            LR-336x280-<nn>-<game>-interactive/ + .zip
+├── Leaderboard/                LB-728x90-<nn>-<game>-interactive/ + .zip
+├── Billboard/                  BB-970x250-<nn>-<game>-interactive/ + .zip
+├── Mobile Leaderboard/         ML-320x50-<nn>-<game>-interactive/ + .zip
+├── Large Mobile Banner/        LM-320x100-<nn>-<game>-interactive/ + .zip
 ├── _src/MG-<nn>-<game>/        Source of each game (index.html + main.js) — EDIT HERE
 ├── _template/                  Shell to start a new game from
 └── _tools/
-    ├── build.py                Builds the 4 formats + zips from _src, updates the manifest
+    ├── build.py                Builds the 13 formats + zips from _src, updates the manifest
     ├── manifest.js             Creative list for the gallery (generated)
+    ├── sheet.html              Layout sheet: one game in every format, in one state
     └── smoke.js                Headless test: plays a game with random input, reports errors
 ```
 
@@ -71,6 +81,24 @@ Each creative folder holds only `index.html` and `main.js`. There are no images,
 | Sticky Bottom Banner | 1456x180 | 430x53 | ≈3.39 | Same as Top Banner plus a close (×) button |
 
 As with the samples' `--k`, each creative is laid out at the size shown on mobile and scaled up `k` times to match `ad.size`. Every game rearranges itself per format. For example, Mine Sweep uses a 9x8 grid in the popup, 5x8 in the side rail and 16x3 in the banners.
+
+### IAB sizes
+
+Shown at their upload size (display size = upload size). Each one reuses the layout family closest to its shape (`data-format` = `popup`, `rail` or `strip`) at its own layout size, which `build.py` writes on `#ad` as `data-layout="<w>x<h>"` and `data-k`. The page scales the layout by `k` to the upload size.
+
+| Folder | Size | Family | Layout | `k` | Notes |
+|---|---|---|---|---|---|
+| Medium Rectangle | 300x250 | popup | 300x250 | 1 | Same layout as the Popup Banner |
+| Half Page | 300x600 | rail | 120x240 | 2.5 | Side Rail layout, 20 px wider |
+| Square | 300x300 | popup | 300x300 | 1 | Popup layout, 50 px taller |
+| Small Square | 200x200 | popup | 300x300 | ≈0.67 | Square layout scaled down; smallest text ≈5–6 px |
+| Large Rectangle | 336x280 | popup | 300x250 | 1.12 | Popup layout scaled up |
+| Leaderboard | 728x90 | strip | 430x53 | ≈1.69 | Same shape as the 1456x180 banners |
+| Billboard | 970x250 | strip | 388x100 | 2.5 | Tall strip: intro / end panels in two columns |
+| Mobile Leaderboard | 320x50 | strip | 340x53 | ≈0.94 | Narrow strip: how-to under the title, *Play again* under the CTA |
+| Large Mobile Banner | 320x100 | strip | 320x100 | 1 | Tall strip, like the Billboard |
+
+To add another size, add a row to `FORMATS` in `_tools/build.py` (folder, code, family, upload size `w`/`h`, layout size `sw`/`sh` with the same shape), make sure each game lays out from `WIDTH` / `HEIGHT` / `SAFE` at that layout size, and rebuild.
 
 ## Games
 
@@ -113,17 +141,23 @@ A session lasts about 20–45 seconds and always has a time limit (`maxPlayMs`).
    python3 "Mini Games/_tools/build.py" mine-sweep
    ```
 
-   A build overwrites that game's 4 folders and 4 zips. `manifest.js` (used by the gallery) is only updated by a full build.
+   A build overwrites that game's 13 folders and 13 zips. `manifest.js` (used by the gallery) is only updated by a full build.
 3. Run the smoke test. It plays the game for 60 seconds with random taps and keys, and fails on any JS error, NaN drawing values, or a loop that keeps running after the end screen.
 
    ```bash
    node "Mini Games/_tools/smoke.js" "Mini Games/Side Rail/SR-LG-200x480-07-mine-sweep-interactive" 60
    ```
 
-   For a folder in `_src`, add the format as the last argument: `popup`, `rail`, `strip` or `strip-close`.
+   For a folder in `_src`, add the format as the last argument: `popup`, `rail`, `strip` or `strip-close`. For an IAB layout, add `@<w>x<h>`: `popup@300x300`, `rail@120x240`, `strip@340.2198x53.1593`, `strip@388x100` or `strip@320x100`.
 
    ```bash
    node "Mini Games/_tools/smoke.js" "Mini Games/_src/MG-07-mine-sweep" 60 strip
+   node "Mini Games/_tools/smoke.js" "Mini Games/_src/MG-07-mine-sweep" 60 strip@320x100
+   ```
+4. Check the layouts side by side with the layout sheet (served over `http://` like the gallery). `state` is `intro`, `play`, `end` or `lose`; `only` takes format codes or `iab`:
+
+   ```
+   http://localhost:8765/Mini%20Games/_tools/sheet.html?game=mine-sweep&state=play&zoom=2&only=iab
    ```
 
 > Don't edit files directly in `Popup Banner/`, `Side Rail/` and the other format folders: the next build overwrites them.
@@ -135,6 +169,7 @@ A session lasts about 20–45 seconds and always has a time limit (`maxPlayMs`).
 1. Copy `_template/` to `_src/MG-18-<game-name>/`.
 2. Update `CONFIG` (`eventPrefix: "mg-<game-name>"`, `api: "mg<GameName>"`, offer, goal…) and rewrite the `GAME` section of `main.js`.
    - Coordinates are in on-screen (served) pixels. Use `FORMAT` (`popup` / `rail` / `strip`), `WIDTH`, `HEIGHT` and `SAFE` (the play area not covered by the HUD) to lay the game out for each format.
+   - Within a family the layout size varies with the IAB sizes: popup is 300 wide and 250 or 300 tall, rail is 240 tall and 100 or 120 wide, strip is 430 / 388 / 340 / 320 wide and 53 or 100 tall. Derive positions from `WIDTH` / `HEIGHT` / `SAFE` rather than fixed numbers.
    - Leave the SHELL / LOOP / LIFECYCLE / INPUT / BOOT sections unchanged.
 3. Add a genre line for the game to `GENRES` in `_tools/build.py`.
 4. Build and smoke test as above.

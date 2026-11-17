@@ -106,10 +106,17 @@
   };
 
   const FORMAT = FORMATS[ad.dataset.format] ? ad.dataset.format : "popup";
-  const WIDTH = FORMATS[FORMAT].width;
-  const HEIGHT = FORMATS[FORMAT].height;
-  const K = FORMATS[FORMAT].k;
+  // The IAB sizes (Square, Half Page, Billboard...) reuse one of the three
+  // families at another layout size: build.py writes it on #ad as
+  // data-layout="<width>x<height>" plus data-k. SAFE stretches with it, so
+  // lay the game out from WIDTH / HEIGHT / SAFE rather than fixed numbers.
+  const AD_LAYOUT = String(ad.dataset.layout || "").split("x").map(Number);
+  const WIDTH = AD_LAYOUT[0] > 0 ? AD_LAYOUT[0] : FORMATS[FORMAT].width;
+  const HEIGHT = AD_LAYOUT[1] > 0 ? AD_LAYOUT[1] : FORMATS[FORMAT].height;
+  const K = Number(ad.dataset.k) > 0 ? Number(ad.dataset.k) : FORMATS[FORMAT].k;
   const SAFE = { ...FORMATS[FORMAT].safe };
+  SAFE.w = WIDTH - SAFE.x;
+  SAFE.h = HEIGHT - SAFE.y;
 
   // The sticky-bottom variant keeps its close button clear of play.
   if (closeButton) {
@@ -270,23 +277,44 @@
   // tile: served px per 16px design tile (art and physics scale with it).
   // groundY: screen y of the ground line. anchor: hero x from SAFE.x while running right.
   // bg: scale of the hills and clouds. jump: jump-speed factor (the strip has little headroom).
+  // IAB layouts, all equal to the native tables at 300x250 / 100x240 / 430x53:
+  // - Square (popup 300 tall): PS grows the tile (16 -> 18) so the same ten
+  //   rows fill the taller frame, ground still on the bottom edge.
+  // - Half Page (rail 120 wide): the extra width is look-ahead; RW spreads the pads.
+  // - Mobile Leaderboard (strip 340 wide): the hero anchors a little further left.
+  // - Billboard / Large Mobile Banner (strip 100 tall): TALL keeps the
+  //   four-row strip level but at popup-sized 16px tiles, ground on the bottom
+  //   edge and a band of sky above.
+  const PS = FORMAT === "popup" ? 1 + (HEIGHT - 250) * 0.0025 : 1;
+  const RW = FORMAT === "rail" ? WIDTH / 100 : 1;
+  const TALL = FORMAT === "strip" && HEIGHT > 80;
   const LAYOUT = {
     popup: {
-      tile: 16, level: "long", groundY: 202, anchor: 104, bg: 1, jump: 1, autoRun: false,
-      sun: [236, 58, 11], clouds: [40, 66, 34, 58, 44],
-      pads: { left: { x: 30, y: 224, r: 20 }, right: { x: 78, y: 224, r: 20 }, jump: { x: 266, y: 220, r: 24 } },
-      zone: { top: 168, split: 54, right: 120 },
-      hint: { text: "REACH THE GOAL GATE", y: 42, size: 10 }
+      tile: 16 * PS, level: "long", groundY: HEIGHT - 48 * PS, anchor: 104, bg: PS, jump: 1, autoRun: false,
+      sun: [236, 58 + (HEIGHT - 250) * 0.4, 11 * PS], clouds: [40, 66, 34, 58, 44].map((y) => y + (HEIGHT - 250) * 0.4),
+      pads: {
+        left: { x: 30 * PS, y: HEIGHT - 26 * PS, r: 20 * PS },
+        right: { x: 78 * PS, y: HEIGHT - 26 * PS, r: 20 * PS },
+        jump: { x: WIDTH - 34 * PS, y: HEIGHT - 30 * PS, r: 24 * PS }
+      },
+      zone: { top: HEIGHT - 82 * PS, split: 54 * PS, right: 120 * PS },
+      hint: { text: "REACH THE GOAL GATE", y: 42 + (HEIGHT - 250) * 0.3, size: 10 }
     },
     rail: {
       tile: 12, level: "long", groundY: 204, anchor: 22, bg: 0.75, jump: 1, autoRun: false,
-      sun: [72, 70, 9], clouds: [56, 84, 48, 76, 64],
-      pads: { left: { x: 15, y: 223, r: 12 }, right: { x: 43, y: 223, r: 12 }, jump: { x: 82, y: 221, r: 15 } },
-      zone: { top: 196, split: 29, right: 58 },
+      sun: [72 * RW, 70, 9], clouds: [56, 84, 48, 76, 64],
+      pads: { left: { x: 15 * RW, y: 223, r: 12 }, right: { x: 43 * RW, y: 223, r: 12 }, jump: { x: WIDTH - 18 * RW, y: 221, r: 15 } },
+      zone: { top: 196, split: 29 * RW, right: 58 * RW },
       hint: { text: "REACH THE GATE", y: SAFE.y + 12, size: 7 }
     },
-    strip: {
-      tile: 10, level: "short", groundY: 45, anchor: 70, bg: 0.32, jump: 0.87, autoRun: true,
+    strip: TALL ? {
+      tile: 16, level: "short", groundY: HEIGHT - 16, anchor: Math.round((WIDTH - SAFE.x) * 0.17), bg: 0.62, jump: 0.87, autoRun: true,
+      sun: [SAFE.x + SAFE.w - 64, 22, 9], clouds: [6, 20, 3, 15, 11],
+      pads: null,
+      zone: null,
+      hint: { text: "TAP TO JUMP · REACH THE GATE", y: 14, size: 9 }
+    } : {
+      tile: 10, level: "short", groundY: 45, anchor: 70 - (430 - WIDTH) * 0.2, bg: 0.32, jump: 0.87, autoRun: true,
       sun: [SAFE.x + SAFE.w - 70, 13, 6], clouds: [4, 10, 2, 8, 5],
       pads: null,
       zone: null,

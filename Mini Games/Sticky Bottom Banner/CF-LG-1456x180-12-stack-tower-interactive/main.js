@@ -64,10 +64,17 @@
   };
 
   const FORMAT = FORMATS[ad.dataset.format] ? ad.dataset.format : "popup";
-  const WIDTH = FORMATS[FORMAT].width;
-  const HEIGHT = FORMATS[FORMAT].height;
-  const K = FORMATS[FORMAT].k;
+  // The IAB sizes (Square, Half Page, Billboard...) reuse one of the three
+  // families at another layout size: build.py writes it on #ad as
+  // data-layout="<width>x<height>" plus data-k. SAFE stretches with it, so
+  // lay the game out from WIDTH / HEIGHT / SAFE rather than fixed numbers.
+  const AD_LAYOUT = String(ad.dataset.layout || "").split("x").map(Number);
+  const WIDTH = AD_LAYOUT[0] > 0 ? AD_LAYOUT[0] : FORMATS[FORMAT].width;
+  const HEIGHT = AD_LAYOUT[1] > 0 ? AD_LAYOUT[1] : FORMATS[FORMAT].height;
+  const K = Number(ad.dataset.k) > 0 ? Number(ad.dataset.k) : FORMATS[FORMAT].k;
   const SAFE = { ...FORMATS[FORMAT].safe };
+  SAFE.w = WIDTH - SAFE.x;
+  SAFE.h = HEIGHT - SAFE.y;
 
   // The sticky-bottom variant keeps its close button clear of play.
   if (closeButton) {
@@ -204,24 +211,38 @@
   // alternate the slide axis; the 53 px strip uses a low side view where every
   // slab slides left-right across the wide band. proj maps world x/z to screen:
   // [x->sx, z->sx, x->sy, z->sy]. World units are about one served px.
+  //
+  // IAB layouts. The square popup (300x300) keeps the popup tuning and puts
+  // the stack top at the same share of the taller play area. The wide rail
+  // (120x240) scales the rail world by WIDTH / 100, and strips narrower than
+  // 430 (Mobile Leaderboard, Billboard, Large Mobile Banner) scale the slide
+  // axis to their play area: sizes, slide range, speeds and the perfect window
+  // scale together, so a slab takes as long to cross and the timing window is
+  // unchanged. The 100-tall strips also get taller, deeper slabs and a lower
+  // camera so the band shows a proper tower instead of a 53px sliver.
+  const RAIL_S = WIDTH / 100;
+  const STRIP_S = Math.min(1, (WIDTH - 66) / 364);
+  const TALL_STRIP = FORMAT === "strip" && HEIGHT > 80;
   const LAYOUT = {
     popup: {
       decor: 1, proj: [0.866, -0.866, 0.5, 0.5], axes: ["x", "z"],
-      origin: [SAFE.x + SAFE.w / 2, SAFE.y + 126], base: { w: 56, d: 56 }, slabH: 10, hover: 7,
+      origin: [SAFE.x + SAFE.w / 2, SAFE.y + (126 * SAFE.h) / 226], base: { w: 56, d: 56 }, slabH: 10, hover: 7,
       slide: { range: 62, enter: 18, speed: 66, step: 4 }, perfect: 3, grow: 6, winZoom: 0.7,
       hint: "TAP · SPACE TO DROP", hintFont: 9
     },
     rail: {
       decor: 0.55, proj: [0.72, -0.72, 0.46, 0.46], axes: ["x", "z"],
-      origin: [SAFE.x + SAFE.w / 2, SAFE.y + SAFE.h * 0.55], base: { w: 30, d: 30 }, slabH: 7, hover: 5,
-      slide: { range: 30, enter: 6, speed: 36, step: 2.2 }, perfect: 2.2, grow: 3.5, winZoom: 0.62,
+      origin: [SAFE.x + SAFE.w / 2, SAFE.y + SAFE.h * 0.55], base: { w: 30 * RAIL_S, d: 30 * RAIL_S }, slabH: 7 * RAIL_S, hover: 5 * RAIL_S,
+      slide: { range: 30 * RAIL_S, enter: 6 * RAIL_S, speed: 36 * RAIL_S, step: 2.2 * RAIL_S }, perfect: 2.2 * RAIL_S, grow: 3.5 * RAIL_S, winZoom: 0.62,
       hint: "TAP TO DROP", hintFont: 7.5
     },
     strip: {
-      decor: 0.45, proj: [1, -0.55, 0, 0.35], axes: ["x"],
-      origin: [SAFE.x + SAFE.w / 2, HEIGHT * 0.62], base: { w: 72, d: 10 }, slabH: 4.2, hover: 3,
-      slide: { range: 100, enter: 10, speed: 70, step: 3.5 }, perfect: 3.5, grow: 7, winZoom: 0.7,
-      hint: "TAP · SPACE TO DROP", hintFont: 7.5
+      decor: TALL_STRIP ? 0.65 : 0.45, proj: [1, -0.55, 0, 0.35], axes: ["x"],
+      origin: [SAFE.x + SAFE.w / 2, HEIGHT * (TALL_STRIP ? 0.58 : 0.62)],
+      base: { w: 72 * STRIP_S, d: TALL_STRIP ? 14 : 10 }, slabH: TALL_STRIP ? 7.5 : 4.2, hover: TALL_STRIP ? 5 : 3,
+      slide: { range: 100 * STRIP_S, enter: 10 * STRIP_S, speed: 70 * STRIP_S, step: 3.5 * STRIP_S }, perfect: 3.5 * STRIP_S, grow: 7 * STRIP_S, winZoom: 0.7,
+      // the short hint keeps the pill clear of the tower on the narrow strips
+      hint: STRIP_S < 0.8 ? "TAP TO DROP" : "TAP · SPACE TO DROP", hintFont: TALL_STRIP ? 8.5 : 7.5
     }
   }[FORMAT];
 

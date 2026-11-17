@@ -102,10 +102,17 @@
   };
 
   const FORMAT = FORMATS[ad.dataset.format] ? ad.dataset.format : "popup";
-  const WIDTH = FORMATS[FORMAT].width;
-  const HEIGHT = FORMATS[FORMAT].height;
-  const K = FORMATS[FORMAT].k;
+  // The IAB sizes (Square, Half Page, Billboard...) reuse one of the three
+  // families at another layout size: build.py writes it on #ad as
+  // data-layout="<width>x<height>" plus data-k. SAFE stretches with it, so
+  // lay the game out from WIDTH / HEIGHT / SAFE rather than fixed numbers.
+  const AD_LAYOUT = String(ad.dataset.layout || "").split("x").map(Number);
+  const WIDTH = AD_LAYOUT[0] > 0 ? AD_LAYOUT[0] : FORMATS[FORMAT].width;
+  const HEIGHT = AD_LAYOUT[1] > 0 ? AD_LAYOUT[1] : FORMATS[FORMAT].height;
+  const K = Number(ad.dataset.k) > 0 ? Number(ad.dataset.k) : FORMATS[FORMAT].k;
   const SAFE = { ...FORMATS[FORMAT].safe };
+  SAFE.w = WIDTH - SAFE.x;
+  SAFE.h = HEIGHT - SAFE.y;
 
   // The sticky-bottom variant keeps its close button clear of play.
   if (closeButton) {
@@ -222,7 +229,7 @@
     ctx.globalAlpha = 1;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.font = `900 ${FORMAT === "popup" ? 12 : 9}px Arial, Helvetica, sans-serif`;
+    ctx.font = `900 ${FORMAT === "popup" ? 12 : FORMAT === "strip" && HEIGHT >= 80 ? 11 : 9}px Arial, Helvetica, sans-serif`;
     floaters.forEach((f) => {
       ctx.globalAlpha = 1 - f.age / f.life;
       ctx.fillStyle = "rgba(0, 0, 0, 0.6)";
@@ -296,6 +303,50 @@
       ]
     }
   }[FORMAT];
+
+  // IAB layouts that reshape the field. The native sizes (300x250, 100x240,
+  // 430x53) skip every branch below and keep the table above as is.
+  const TALL_STRIP = FORMAT === "strip" && HEIGHT >= 80;               // 388x100, 320x100
+  const SHORT_STRIP = FORMAT === "strip" && !TALL_STRIP && WIDTH < 400; // 340x53
+  if (FORMAT === "popup" && HEIGHT >= 280) {
+    // Square 300x300: one more row of hens fills the extra height and the
+    // swoop egg window starts below it, so the field keeps its proportions.
+    // A third more hens: a little faster fire and fewer eggs per second keep
+    // the session about as long and as risky as the 300x250 popup.
+    LAYOUT.fireEvery = 0.19;
+    LAYOUT.waves = LAYOUT.waves.map((spec) => ({ ...spec, rows: spec.rows + 1, eggEvery: spec.eggEvery * 1.15 }));
+    LAYOUT.swoop = { ...LAYOUT.swoop, dropFrom: LAYOUT.swoop.dropFrom + LAYOUT.rowGap };
+  } else if (FORMAT === "rail" && WIDTH >= 115) {
+    // Half page 120x240: a fifth column across the wider rail.
+    LAYOUT.sway = 6;
+    LAYOUT.waves = LAYOUT.waves.map((spec) => ({ ...spec, cols: spec.cols + 1, spacing: 19 }));
+  } else if (SHORT_STRIP) {
+    // Mobile leaderboard 340x53: 90 px less run-up, so one row fewer per wave
+    // keeps the gap between the flock and the ship close to the native strip.
+    LAYOUT.formTop = 26;
+    LAYOUT.swoop = { ...LAYOUT.swoop, dropFrom: 110, dropGap: 55 };
+    LAYOUT.waves = LAYOUT.waves.map((spec) => ({ ...spec, rows: spec.rows - 1 }));
+  } else if (TALL_STRIP) {
+    // Billboard 388x100 / large mobile banner 320x100: twice the strip's
+    // height, so rail-sized hens four abreast; the shorter 320 run gets a
+    // four-row final wave, the billboard five.
+    const long = WIDTH >= 360;
+    Object.assign(LAYOUT, {
+      henScale: 0.56, shipScale: 0.7, itemScale: 0.74,
+      shipGap: 26, shipMargin: 12,
+      formTop: 22, rowGap: 28, sway: 6, enterSwing: 14, enterOffset: 24,
+      swoop: { out: 26, back: 22, approach: 28, exit: 18, aim: 10, dropFrom: long ? 130 : 118, dropGap: long ? 55 : 40, reach: 15 },
+      henHitR: 10, touchR: 11, eggHitR: 6, pickupR: 14,
+      fireEvery: 0.24, bulletSpeed: 420, spreadVu: 50,
+      eggV0: 60, eggGravity: 80, eggMax: 150,
+      dragGain: 1.2, keySpeed: 130, giftSway: 9,
+      banner: 20, bannerSub: 9, planet: [0.6, 0.64, 15],
+      waves: [
+        { cols: 4, rows: 4, spacing: 21, hp: 1, points: 10, swoopEvery: 3.2, maxSwoop: 1, swoopTime: 2.6, swoopEggs: false, eggEvery: 1.5, eggAim: 0.35 },
+        { cols: 4, rows: long ? 5 : 4, spacing: 21, hp: 2, points: 15, swoopEvery: 1.9, maxSwoop: 2, swoopTime: 2.4, swoopEggs: true, eggEvery: 1.15, eggAim: 0.45 }
+      ]
+    });
+  }
 
   const WAVES = LAYOUT.waves;
   const SHIP_V = FIELD_H - LAYOUT.shipGap;

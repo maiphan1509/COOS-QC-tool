@@ -106,10 +106,17 @@
   };
 
   const FORMAT = FORMATS[ad.dataset.format] ? ad.dataset.format : "popup";
-  const WIDTH = FORMATS[FORMAT].width;
-  const HEIGHT = FORMATS[FORMAT].height;
-  const K = FORMATS[FORMAT].k;
+  // The IAB sizes (Square, Half Page, Billboard...) reuse one of the three
+  // families at another layout size: build.py writes it on #ad as
+  // data-layout="<width>x<height>" plus data-k. SAFE stretches with it, so
+  // lay the game out from WIDTH / HEIGHT / SAFE rather than fixed numbers.
+  const AD_LAYOUT = String(ad.dataset.layout || "").split("x").map(Number);
+  const WIDTH = AD_LAYOUT[0] > 0 ? AD_LAYOUT[0] : FORMATS[FORMAT].width;
+  const HEIGHT = AD_LAYOUT[1] > 0 ? AD_LAYOUT[1] : FORMATS[FORMAT].height;
+  const K = Number(ad.dataset.k) > 0 ? Number(ad.dataset.k) : FORMATS[FORMAT].k;
   const SAFE = { ...FORMATS[FORMAT].safe };
+  SAFE.w = WIDTH - SAFE.x;
+  SAFE.h = HEIGHT - SAFE.y;
 
   // The sticky-bottom variant keeps its close button clear of play.
   if (closeButton) {
@@ -246,16 +253,30 @@
   // camera sits higher so the tall frame shows more track. The strip is too
   // flat for that, so it turns the same run into a side view with the three
   // lanes stacked as rows (SIDE).
+  // IAB layouts (all equal the native values at 300x250 / 100x240 / 430x53):
+  // - Square (popup 300 tall), PT 0..1: the horizon drops, the lens grows and
+  //   the camera rises so the runner keeps the same spot near the bottom edge.
+  // - Half Page (rail 120 wide): px() centres on WIDTH, so the extra width
+  //   just shows more of the street on both sides.
+  // - Mobile Leaderboard (strip 340 wide): same side view; the look-ahead
+  //   still covers ~30 m (see ppm).
+  // - Billboard / Large Mobile Banner (strip 100 tall): SZ scales every
+  //   side-view row, sprite and stroke vertically; ppm keeps ~30 m in view.
+  const PT = FORMAT === "popup" ? (HEIGHT - 250) / 50 : 0;
+  const SZ = FORMAT === "strip" && HEIGHT > 80 ? HEIGHT / ((180 * 430) / 1456) : 1;
   const VIEW = {
-    popup: { horizon: 84, camH: 3.6, focal: 230, follow: 0.55, fx: 1 },
+    popup: { horizon: 84 + 13 * PT, camH: 3.6 + 0.38 * PT, focal: 230 + 25 * PT, follow: 0.55, fx: 1 },
     rail: { horizon: 96, camH: 6.2, focal: 114, follow: 0.75, fx: 0.6 },
-    strip: { horizon: 84, camH: 3.6, focal: 230, follow: 0, fx: 0.45 }
+    strip: { horizon: 84, camH: 3.6, focal: 230, follow: 0, fx: 0.45 * SZ }
   }[FORMAT];
+  const SIDE_RUNNER_X = SAFE.x + 30 + (SZ - 1) * 10;
   const SIDE = FORMAT === "strip" ? {
-    laneY: [21, 34, 47],           // feet line of the top, middle and bottom rows
-    runnerX: SAFE.x + 30,
-    ppm: 8,                        // horizontal px per metre
-    ppmY: 7.5                      // vertical px per metre (jump height, coin height)
+    laneY: [21, 34, 47].map((y) => y * SZ),   // feet line of the top, middle and bottom rows
+    runnerX: SIDE_RUNNER_X,
+    // Horizontal px per metre: 8 natively; never so many that less than
+    // ~30 m of track shows ahead of the runner (narrow IAB strips).
+    ppm: Math.min(8 * (1 + (SZ - 1) * 0.15), (WIDTH - SIDE_RUNNER_X) / 30),
+    ppmY: 7.5 * SZ                 // vertical px per metre (jump height, coin height)
   } : null;
 
   const HORIZON = VIEW.horizon;
@@ -263,7 +284,7 @@
   const FOCAL = VIEW.focal;
   const RUNNER_Z = 6;              // camera-to-runner depth (m)
   // The runner and floating text are drawn at popup size (38px per metre) and scaled.
-  const RS = SIDE ? 0.22 : FOCAL / RUNNER_Z / 38.33;
+  const RS = SIDE ? 0.22 * SZ : FOCAL / RUNNER_Z / 38.33;
   const NEAR_Z = 0.9;
   const FAR_Z = 74;
   const FOG_NEAR = 34;
@@ -430,7 +451,7 @@
 
   // Sky, sun and skyline down to `horizon`, ground below; `q` scales the sun
   // and skyline to the format (the strip's sky is a thin band above the rows).
-  const BACK = { popup: { horizon: HORIZON, q: 1 }, rail: { horizon: HORIZON, q: 0.6 }, strip: { horizon: 15, q: 0.3 } }[FORMAT];
+  const BACK = { popup: { horizon: HORIZON, q: 1 }, rail: { horizon: HORIZON, q: 0.6 }, strip: { horizon: 15 * SZ, q: 0.3 * SZ } }[FORMAT];
 
   const paintBackdrop = (g, w, h) => {
     const { horizon, q } = BACK;
@@ -1645,7 +1666,7 @@
     }
     ctx.strokeStyle = "#ffffff";
     ctx.lineWidth = 1;
-    const len = 22 * (SIDE ? 0.7 : VIEW.fx);
+    const len = 22 * (SIDE ? 0.7 * SZ : VIEW.fx);
     game.streaks.forEach((streak) => {
       const dir = streakDir(streak);
       ctx.globalAlpha = (1 - streak.age / streak.life) * 0.45;
@@ -1662,8 +1683,8 @@
     const k = clamp(game.dist / CONFIG.goal, 0, 1);
     const x0 = SAFE.x + 10;
     const w = SAFE.w - 20;
-    const y = SIDE ? HEIGHT - 2.5 : SAFE.y + 3.5;
-    const t = SIDE ? 1.6 : 3;
+    const y = SIDE ? HEIGHT - 2.5 * SZ : SAFE.y + 3.5;
+    const t = SIDE ? 1.6 * SZ : 3;
     ctx.fillStyle = "rgba(255, 255, 255, 0.18)";
     ctx.fillRect(x0, y - t / 2, w, t);
     ctx.fillStyle = PALETTE.accent;
@@ -1679,9 +1700,9 @@
   };
 
   const HINT = {
-    popup: { text: "SWIPE OR ARROWS TO DODGE", y: 128, size: 10, icon: true },
+    popup: { text: "SWIPE OR ARROWS TO DODGE", y: 128 + 22 * PT, size: 10, icon: true },
     rail: { text: "SWIPE TO DODGE", y: SAFE.y + 46, size: 7, icon: false },
-    strip: { text: "SWIPE UP/DOWN TO SWITCH · TAP TO JUMP", y: 8, size: 7.5, icon: false }
+    strip: { text: "SWIPE UP/DOWN TO SWITCH · TAP TO JUMP", y: 8 * SZ, size: SZ > 1 ? 8.5 : 7.5, icon: false }
   }[FORMAT];
 
   const drawHint = () => {
@@ -1743,29 +1764,29 @@
     const drift = game.dist * 0.7;
     for (let k = Math.floor((drift - 20) / 16); SIDE.runnerX + (k * 16 - drift) * ppm < WIDTH + 4; k += 1) {
       const x = SIDE.runnerX + (k * 16 - drift) * ppm;
-      ctx.fillRect(x, 1, 1.2, 12);
-      ctx.fillRect(x - 1, 1, 3.4, 1.4);
+      ctx.fillRect(x, SZ, 1.2 * SZ, 12 * SZ);
+      ctx.fillRect(x - SZ, SZ, 3.4 * SZ, 1.4 * SZ);
     }
     ctx.fillStyle = PALETTE.wall;
-    ctx.fillRect(0, 12, WIDTH, 5);
+    ctx.fillRect(0, 12 * SZ, WIDTH, 5 * SZ);
     ctx.fillStyle = PALETTE.wallTop;
-    ctx.fillRect(0, 12, WIDTH, 1);
+    ctx.fillRect(0, 12 * SZ, WIDTH, SZ);
     ctx.fillStyle = PALETTE.ballast;
-    SIDE.laneY.forEach((y) => ctx.fillRect(0, y - 1, WIDTH, 4));
+    SIDE.laneY.forEach((y) => ctx.fillRect(0, y - SZ, WIDTH, 4 * SZ));
     ctx.fillStyle = PALETTE.sleeper;
     ctx.beginPath();
     for (let k = Math.floor((game.dist - SIDE.runnerX / ppm) / SLEEPER_GAP); sideX(k * SLEEPER_GAP) < WIDTH + 2; k += 1) {
       const x = sideX(k * SLEEPER_GAP);
-      SIDE.laneY.forEach((y) => ctx.rect(x - 1.1, y, 2.2, 3));
+      SIDE.laneY.forEach((y) => ctx.rect(x - 1.1 * SZ, y, 2.2 * SZ, 3 * SZ));
       if (k % 4 === 0) {
-        ctx.rect(x, 13, 0.8, 4);
+        ctx.rect(x, 13 * SZ, 0.8 * SZ, 4 * SZ);
       }
     }
     ctx.fill();
     ctx.fillStyle = PALETTE.rail;
-    SIDE.laneY.forEach((y) => ctx.fillRect(0, y - 0.6, WIDTH, 1.2));
+    SIDE.laneY.forEach((y) => ctx.fillRect(0, y - 0.6 * SZ, WIDTH, 1.2 * SZ));
     ctx.fillStyle = PALETTE.railShine;
-    SIDE.laneY.forEach((y) => ctx.fillRect(0, y - 0.6, WIDTH, 0.4));
+    SIDE.laneY.forEach((y) => ctx.fillRect(0, y - 0.6 * SZ, WIDTH, 0.4 * SZ));
   };
 
   const drawSideTrain = (o, feet) => {
@@ -1775,85 +1796,88 @@
       return;
     }
     const style = TRAIN_STYLES[o.style];
-    const top = feet - 11.5;
+    const z = SZ;
+    const top = feet - 11.5 * z;
     const w = x1 - x0;
     ctx.fillStyle = "rgba(10, 4, 20, 0.35)";
-    ctx.fillRect(x0 - 1, feet - 0.5, w + 2, 2.5);
+    ctx.fillRect(x0 - z, feet - 0.5 * z, w + 2 * z, 2.5 * z);
     ctx.fillStyle = style.side;
-    ctx.fillRect(x0, top + 1, w, 9);
+    ctx.fillRect(x0, top + z, w, 9 * z);
     ctx.fillStyle = style.roof;
-    ctx.fillRect(x0 + 1, top, w - 2, 1.5);
+    ctx.fillRect(x0 + z, top, w - 2 * z, 1.5 * z);
     ctx.fillStyle = style.glass;
-    ctx.fillRect(x0 + 3, top + 2.6, w - 6, 3);
+    ctx.fillRect(x0 + 3 * z, top + 2.6 * z, w - 6 * z, 3 * z);
     ctx.fillStyle = style.side;
-    for (let x = x0 + 9; x < x1 - 4; x += 7) {
-      ctx.fillRect(x, top + 2.6, 1, 3);
+    for (let x = x0 + 9 * z; x < x1 - 4 * z; x += 7 * z) {
+      ctx.fillRect(x, top + 2.6 * z, z, 3 * z);
     }
     ctx.fillStyle = style.stripe;
-    ctx.fillRect(x0, top + 6.6, w, 1.2);
+    ctx.fillRect(x0, top + 6.6 * z, w, 1.2 * z);
     ctx.fillStyle = style.bodyDark;
-    ctx.fillRect(x0, top + 1, 2.4, 9);
+    ctx.fillRect(x0, top + z, 2.4 * z, 9 * z);
     ctx.fillStyle = "#fff6d2";
-    ctx.fillRect(x0 - 0.4, top + 7.6, 1.4, 1.4);
+    ctx.fillRect(x0 - 0.4 * z, top + 7.6 * z, 1.4 * z, 1.4 * z);
     ctx.fillStyle = "#141020";
-    ctx.fillRect(x0 + 1, top + 10, w - 2, 1.5);
-    [6, 14, w - 14, w - 6].forEach((dx) => oval(x0 + dx, feet - 1, 1.5, 1.5));
+    ctx.fillRect(x0 + z, top + 10 * z, w - 2 * z, 1.5 * z);
+    [6 * z, 14 * z, w - 14 * z, w - 6 * z].forEach((dx) => oval(x0 + dx, feet - z, 1.5 * z, 1.5 * z));
   };
 
   const drawSideBarrier = (o, feet) => {
     const x = sideX(o.wz);
-    if (x < -6 || x > WIDTH + 6) {
+    const z = SZ;
+    if (x < -6 * z || x > WIDTH + 6 * z) {
       return;
     }
     const h = 0.95 * SIDE.ppmY;
     ctx.fillStyle = "rgba(10, 4, 20, 0.35)";
-    oval(x, feet + 0.6, 5, 1.2);
+    oval(x, feet + 0.6 * z, 5 * z, 1.2 * z);
     if (o.hit) {
       ctx.fillStyle = PALETTE.barrier;
-      ctx.fillRect(x - 4, feet - 2, 8, 2);
+      ctx.fillRect(x - 4 * z, feet - 2 * z, 8 * z, 2 * z);
       return;
     }
     ctx.fillStyle = PALETTE.post;
-    ctx.fillRect(x - 3.4, feet - h, 1.2, h);
-    ctx.fillRect(x + 2.2, feet - h, 1.2, h);
+    ctx.fillRect(x - 3.4 * z, feet - h, 1.2 * z, h);
+    ctx.fillRect(x + 2.2 * z, feet - h, 1.2 * z, h);
     ctx.fillStyle = PALETTE.barrier;
-    ctx.fillRect(x - 4.2, feet - h, 8.4, 3.4);
+    ctx.fillRect(x - 4.2 * z, feet - h, 8.4 * z, 3.4 * z);
     ctx.fillStyle = PALETTE.barrierLight;
-    ctx.fillRect(x - 2.4, feet - h, 1.4, 3.4);
-    ctx.fillRect(x + 1, feet - h, 1.4, 3.4);
+    ctx.fillRect(x - 2.4 * z, feet - h, 1.4 * z, 3.4 * z);
+    ctx.fillRect(x + z, feet - h, 1.4 * z, 3.4 * z);
     ctx.fillStyle = PALETTE.lamp;
-    oval(x - 2.8, feet - h - 0.8, 0.9, 0.9);
+    oval(x - 2.8 * z, feet - h - 0.8 * z, 0.9 * z, 0.9 * z);
   };
 
   const drawSideCoin = (coin, feet, time) => {
     const x = sideX(coin.wz);
-    if (x < -4 || x > WIDTH + 4) {
+    if (x < -4 * SZ || x > WIDTH + 4 * SZ) {
       return;
     }
     const y = feet - (coin.y + 0.3) * SIDE.ppmY;
     const spin = Math.abs(Math.cos(time * 5 + coin.phase));
     ctx.fillStyle = PALETTE.coinDark;
-    oval(x, y, Math.max(0.5, 2.4 * spin), 2.4);
+    oval(x, y, Math.max(0.5, 2.4 * spin) * SZ, 2.4 * SZ);
     ctx.fillStyle = PALETTE.coin;
-    oval(x, y, Math.max(0.3, 1.8 * spin), 1.8);
+    oval(x, y, Math.max(0.3, 1.8 * spin) * SZ, 1.8 * SZ);
   };
 
   const drawSideFinish = () => {
     const x = sideX(game.finish.wz);
-    if (x < -30 || x > WIDTH + 30) {
+    const z = SZ;
+    if (x < -30 * z || x > WIDTH + 30 * z) {
       return;
     }
     ctx.fillStyle = "#ffffff";
-    for (let row = 0; 9 + row * 2 < HEIGHT - 3; row += 1) {
-      ctx.fillRect(x - 2 + (row % 2) * 2, 9 + row * 2, 2, 2);
+    for (let row = 0; 9 * z + row * 2 * z < HEIGHT - 3 * z; row += 1) {
+      ctx.fillRect(x - 2 * z + (row % 2) * 2 * z, 9 * z + row * 2 * z, 2 * z, 2 * z);
     }
     ctx.fillStyle = "#16112a";
-    ctx.fillRect(x - 21, 0.5, 42, 8.5);
+    ctx.fillRect(x - 21 * z, 0.5 * z, 42 * z, 8.5 * z);
     ctx.fillStyle = PALETTE.accent;
-    ctx.font = "italic 900 7px Arial, Helvetica, sans-serif";
+    ctx.font = `italic 900 ${7 * z}px Arial, Helvetica, sans-serif`;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.fillText("FINISH", x, 5);
+    ctx.fillText("FINISH", x, 5 * z);
   };
 
   // Profile of the same hooded runner, facing right, authored ~60 units tall.
@@ -1861,7 +1885,7 @@
     const feet = laneFeet(game.x / LANE_W);
     const k = 1 / (1 + game.y * 0.8);
     ctx.fillStyle = "rgba(10, 4, 20, 0.45)";
-    oval(SIDE.runnerX, feet + 0.5, 6 * k, 1.4 * k);
+    oval(SIDE.runnerX, feet + 0.5 * SZ, 6 * k * SZ, 1.4 * k * SZ);
     const crash = game.crashT >= 0 ? Math.min(1, game.crashT / 0.35) : 0;
     const wobble = game.stumble > 0 ? Math.sin(game.stumble * 40) * 0.25 * (game.stumble / STUMBLE_TIME) : 0;
     ctx.save();
@@ -1931,7 +1955,7 @@
     arm(cheer ? 2.4 : (air ? 2.2 : -sw), PALETTE.hoodie);
     ctx.restore();
     if (game.crashT >= 0) {
-      drawDizzy(SIDE.runnerX, feet - 10, time);
+      drawDizzy(SIDE.runnerX, feet - 10 * SZ, time);
     }
   };
 

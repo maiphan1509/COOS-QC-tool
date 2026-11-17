@@ -70,10 +70,17 @@
   };
 
   const FORMAT = FORMATS[ad.dataset.format] ? ad.dataset.format : "popup";
-  const WIDTH = FORMATS[FORMAT].width;
-  const HEIGHT = FORMATS[FORMAT].height;
-  const K = FORMATS[FORMAT].k;
+  // The IAB sizes (Square, Half Page, Billboard...) reuse one of the three
+  // families at another layout size: build.py writes it on #ad as
+  // data-layout="<width>x<height>" plus data-k. SAFE stretches with it, so
+  // lay the game out from WIDTH / HEIGHT / SAFE rather than fixed numbers.
+  const AD_LAYOUT = String(ad.dataset.layout || "").split("x").map(Number);
+  const WIDTH = AD_LAYOUT[0] > 0 ? AD_LAYOUT[0] : FORMATS[FORMAT].width;
+  const HEIGHT = AD_LAYOUT[1] > 0 ? AD_LAYOUT[1] : FORMATS[FORMAT].height;
+  const K = Number(ad.dataset.k) > 0 ? Number(ad.dataset.k) : FORMATS[FORMAT].k;
   const SAFE = { ...FORMATS[FORMAT].safe };
+  SAFE.w = WIDTH - SAFE.x;
+  SAFE.h = HEIGHT - SAFE.y;
 
   // The sticky-bottom variant keeps its close button clear of play.
   if (closeButton) {
@@ -203,20 +210,53 @@
 
   // Hole field per format; lower rows sit closer to the viewer, so they scale
   // up. The strip gets a single row of six.
+  // The IAB layouts stretch these from WIDTH / HEIGHT / SAFE, and every
+  // formula lands on the original numbers at the native sizes:
+  // - popup 300x300: the field below the horizon spreads over the extra
+  //   height and the holes grow (POPUP_G) instead of leaving a dead band;
+  // - rail 120x240: both columns spread across the width and grow (RAIL_G);
+  // - strip 340 wide: as many holes as fit at the native spacing (five);
+  // - strip 100 tall (388x100, 320x100): two staggered rows of bigger holes,
+  //   a back row of five (four) and a front row of four (three).
+  const TALL_STRIP = FORMAT === "strip" && SAFE.h >= 80;
+  const POPUP_HORIZON = 70 + (HEIGHT - 250) * 0.2;
+  const POPUP_FIELD = (HEIGHT - POPUP_HORIZON) / 180;
+  const POPUP_G = 1 + (HEIGHT - 250) * 0.0016;
+  const RAIL_X = WIDTH / 100;
+  const RAIL_G = 1 + (RAIL_X - 1) * 0.75;
+
+  const stripHoles = () => {
+    if (!TALL_STRIP) {
+      const count = Math.min(6, Math.floor(SAFE.w / 54));
+      return Array.from({ length: count }, (_, index) => ({ x: SAFE.x + (SAFE.w * (index + 0.5)) / count, y: 44, s: 0.5 }));
+    }
+    const back = Math.max(3, Math.round(SAFE.w / 64));
+    const step = SAFE.w / back;
+    return [
+      ...Array.from({ length: back }, (_, index) => ({ x: SAFE.x + step * (index + 0.5), y: 52, s: 0.6 })),
+      ...Array.from({ length: back - 1 }, (_, index) => ({ x: SAFE.x + step * (index + 1), y: 84, s: 0.7 }))
+    ];
+  };
+
   const HOLES = {
     popup: [
       { x: 62, y: 96, s: 0.82 }, { x: 150, y: 96, s: 0.82 }, { x: 238, y: 96, s: 0.82 },
       { x: 56, y: 150, s: 0.93 }, { x: 150, y: 150, s: 0.93 }, { x: 244, y: 150, s: 0.93 },
       { x: 50, y: 210, s: 1.05 }, { x: 150, y: 210, s: 1.05 }, { x: 250, y: 210, s: 1.05 }
-    ],
-    rail: [86, 128, 170, 212].flatMap((y, row) => [27, 73].map((x) => ({ x, y, s: 0.52 + row * 0.03 }))),
-    strip: Array.from({ length: 6 }, (_, index) => ({ x: SAFE.x + (SAFE.w * (index + 0.5)) / 6, y: 44, s: 0.5 }))
+    ].map(({ x, y, s }) => ({ x, y: POPUP_HORIZON + (y - 70) * POPUP_FIELD, s: s * POPUP_G })),
+    rail: [86, 128, 170, 212].flatMap((y, row) => [27, 73].map((x) => ({ x: x * RAIL_X, y, s: (0.52 + row * 0.03) * RAIL_G }))),
+    strip: stripHoles()
   }[FORMAT];
 
   const SCENE = {
-    popup: { horizon: 70, hammer: 1, clouds: [[40, 40, 1], [210, 34, 0.8], [270, 50, 0.6]] },
-    rail: { horizon: 60, hammer: 0.55, clouds: [[12, 44, 0.42], [64, 50, 0.34]] },
-    strip: { horizon: 16, hammer: 0.5, clouds: [[110, 6, 0.3], [250, 9, 0.25], [370, 5, 0.3]] }
+    popup: {
+      horizon: POPUP_HORIZON, hammer: POPUP_G,
+      clouds: [[40, 40, 1], [210, 34, 0.8], [270, 50, 0.6]].map(([x, y, size]) => [x, y + (HEIGHT - 250) * 0.1, size])
+    },
+    rail: { horizon: 60, hammer: 0.55 * RAIL_G, clouds: [[12, 44, 0.42], [64, 50, 0.34]].map(([x, y, size]) => [x * RAIL_X, y, size]) },
+    strip: TALL_STRIP
+      ? { horizon: 24, hammer: 0.65, clouds: [[100, 9, 0.4], [215, 12, 0.32], [320, 7, 0.38]].map(([x, y, size]) => [(x * WIDTH) / 388, y, size]) }
+      : { horizon: 16, hammer: 0.5, clouds: [[110, 6, 0.3], [250, 9, 0.25], [370, 5, 0.3]].map(([x, y, size]) => [(x * WIDTH) / 430, y, size]) }
   }[FORMAT];
 
   if (FORMAT === "strip") {
@@ -240,7 +280,7 @@
   const KEY_HOLES = {};
   HOLES.forEach((_, index) => {
     KEY_HOLES[String(index + 1)] = index;
-    if (HOLES.length === 9) {
+    if (FORMAT === "popup" && HOLES.length === 9) {
       KEY_HOLES["qweasdzxc"[index]] = index;
     }
   });
